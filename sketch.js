@@ -16,7 +16,7 @@ let jugador1;
 let jugador2;
 let plataformas = [];
 let pelotas = [];
-let ganador = "";
+let charcos = [];
 
 let fondos = [];
 let sprites = {};
@@ -84,17 +84,21 @@ function iniciarJuego() {
   World.clear(world, false);
   plataformas = [];
   pelotas = [];
+  charcos = [];
 
   plataformas.push(new Plataforma(450, 520, 680, 30));
   plataformas.push(new Plataforma(250, 380, 180, 18));
   plataformas.push(new Plataforma(650, 380, 180, 18));
   plataformas.push(new Plataforma(450, 260, 200, 18));
 
-  let controles1 = { izq: 65, der: 68, salto: 87, lanzar: 70, nombre: "Jugador 1" };
-  let controles2 = { izq: LEFT_ARROW, der: RIGHT_ARROW, salto: UP_ARROW, lanzar: 75, nombre: "Jugador 2" };
+  let controles1 = { izq: 65, der: 68, salto: 87, lanzar: 70, nombre: "J1" };
+  let controles2 = { izq: LEFT_ARROW, der: RIGHT_ARROW, salto: UP_ARROW, lanzar: 75, nombre: "J2" };
 
   jugador1 = new Jugador(280, 200, personajes[seleccionJ1], controles1, 1);
   jugador2 = new Jugador(620, 200, personajes[seleccionJ2], controles2, -1);
+
+  pelotas.push(new Pelota(340, 40, "fuego"));
+  pelotas.push(new Pelota(560, 40, "piedra"));
 
   estado = "jugando";
 }
@@ -107,8 +111,6 @@ function draw() {
   } else if (estado === "jugando") {
     Engine.update(engine);
     dibujarJuego();
-  } else if (estado === "fin") {
-    dibujarPantallaFin();
   }
 }
 
@@ -185,7 +187,15 @@ function dibujarJuego() {
     plat.mostrar();
   }
 
-  if (frameCount % 150 === 0 && pelotas.length < 5) {
+  for (let i = charcos.length - 1; i >= 0; i--) {
+    charcos[i].vida--;
+    charcos[i].mostrar();
+    if (charcos[i].vida <= 0) {
+      charcos.splice(i, 1);
+    }
+  }
+
+  if (frameCount % 120 === 0 && pelotas.length < 6) {
     let tipos = ["fuego", "piedra", "nieve", "agua"];
     pelotas.push(new Pelota(random(180, width - 180), -20, random(tipos)));
   }
@@ -204,64 +214,17 @@ function dibujarJuego() {
 
   jugador2.actualizar();
   jugador2.mostrar();
-
-  dibujarMarcador();
-
-  if (jugador1.vidas <= 0) {
-    ganador = "Jugador 2 (" + jugador2.datos.nombre + ")";
-    estado = "fin";
-  } else if (jugador2.vidas <= 0) {
-    ganador = "Jugador 1 (" + jugador1.datos.nombre + ")";
-    estado = "fin";
-  }
-}
-
-function dibujarMarcador() {
-  rectMode(CORNER);
-  noStroke();
-
-  fill(0, 0, 0, 160);
-  rect(20, 15, 230, 65, 8);
-  rect(width - 250, 15, 230, 65, 8);
-
-  textAlign(LEFT, TOP);
-  fill(255, 80, 80);
-  textSize(16);
-  text("J1: " + jugador1.datos.nombre, 32, 22);
-  fill(255);
-  text("Daño: " + jugador1.dano + "%   Vidas: " + jugador1.vidas, 32, 46);
-
-  fill(80, 170, 255);
-  text("J2: " + jugador2.datos.nombre, width - 238, 22);
-  fill(255);
-  text("Daño: " + jugador2.dano + "%   Vidas: " + jugador2.vidas, width - 238, 46);
-}
-
-function dibujarPantallaFin() {
-  imageMode(CORNER);
-  image(fondos[fondoActual], 0, 0, width, height);
-  fill(0, 0, 0, 190);
-  rect(0, 0, width, height);
-
-  textAlign(CENTER, CENTER);
-  fill(100, 255, 120);
-  textSize(42);
-  text("¡VICTORIA!", width / 2, height / 2 - 40);
-
-  fill(255);
-  textSize(24);
-  text("Ganador: " + ganador, width / 2, height / 2 + 10);
-
-  textSize(18);
-  text("Presiona ENTER para volver a elegir personajes", width / 2, height / 2 + 70);
 }
 
 function verificarColision(bodyA, bodyB) {
   let pelota = bodyA.pelotaRef || bodyB.pelotaRef;
   let jugador = bodyA.jugadorRef || bodyB.jugadorRef;
+  let plataforma = bodyA.plataformaRef || bodyB.plataformaRef;
 
   if (pelota && jugador) {
     pelota.impactar(jugador);
+  } else if (pelota && plataforma) {
+    pelota.rebotarEnPlataforma(plataforma);
   }
 }
 
@@ -277,16 +240,15 @@ function keyPressed() {
   }
 
   if (estado === "jugando") {
+    if (keyCode === ESCAPE) {
+      estado = "seleccion";
+      return;
+    }
     if (keyCode === jugador1.controles.salto) jugador1.saltar();
     if (keyCode === jugador1.controles.lanzar) jugador1.accionPelota();
 
     if (keyCode === jugador2.controles.salto) jugador2.saltar();
     if (keyCode === jugador2.controles.lanzar) jugador2.accionPelota();
-    return;
-  }
-
-  if (estado === "fin" && keyCode === ENTER) {
-    estado = "seleccion";
   }
 }
 
@@ -297,6 +259,7 @@ class Plataforma {
     this.w = w;
     this.h = h;
     this.body = Bodies.rectangle(x, y, w, h, { isStatic: true, friction: 0.08 });
+    this.body.plataformaRef = this;
     World.add(world, this.body);
   }
 
@@ -307,6 +270,23 @@ class Plataforma {
     strokeWeight(2);
     fill(110, 95, 80);
     rect(this.x, this.y, this.w, this.h, 6);
+    pop();
+  }
+}
+
+class Charco {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.w = 110;
+    this.vida = 300;
+  }
+
+  mostrar() {
+    push();
+    noStroke();
+    fill(40, 165, 255, 190);
+    ellipse(this.x, this.y, this.w, 10);
     pop();
   }
 }
@@ -326,7 +306,7 @@ class Jugador {
     this.body.jugadorRef = this;
     World.add(world, this.body);
 
-    this.vidas = 3;
+    this.vida = 100;
     this.dano = 0;
     this.direccion = dirInicial;
     this.pelotaTomada = null;
@@ -336,45 +316,84 @@ class Jugador {
     this.tiempoQuemado = 0;
     this.tiempoCongelado = 0;
     this.tiempoResbaloso = 0;
+    this.tiempoAturdido = 0;
+    this.mensajeEfecto = "";
+    this.tiempoMensaje = 0;
   }
 
   actualizar() {
-    this.mover();
+    this.verificarCharco();
     this.actualizarEfectos();
+
+    if (this.tiempoAturdido <= 0) {
+      this.mover();
+    }
+
     this.actualizarEstadoAnimacion();
 
     let pos = this.body.position;
-    if (pos.y > height + 80 || pos.x < -100 || pos.x > width + 100) {
-      this.perderVida();
+    if (pos.y > height + 80 || pos.x < -120 || pos.x > width + 120) {
+      this.reaparecer();
+    }
+  }
+
+  verificarCharco() {
+    let pos = this.body.position;
+    let piesY = pos.y + this.h / 2;
+    for (let c of charcos) {
+      if (abs(pos.x - c.x) < c.w / 2 && abs(piesY - c.y) < 20) {
+        this.tiempoResbaloso = 45;
+      }
     }
   }
 
   mover() {
-    let factorVel = this.tiempoCongelado > 0 ? 0.45 : 1;
+    if (this.tiempoCongelado > 100) {
+      Body.setVelocity(this.body, { x: 0, y: this.body.velocity.y });
+      return;
+    }
+
+    let factorVel = this.tiempoCongelado > 0 ? 0.3 : 1;
     let velMax = this.datos.vel * factorVel;
     let vx = this.body.velocity.x;
 
-    if (keyIsDown(this.controles.izq)) {
-      this.direccion = -1;
-      vx = -velMax;
-    } else if (keyIsDown(this.controles.der)) {
-      this.direccion = 1;
-      vx = velMax;
-    } else if (this.tiempoResbaloso <= 0 && fondoActual !== 2) {
-      vx *= 0.8;
+    if (this.tiempoResbaloso > 0) {
+      if (keyIsDown(this.controles.izq)) {
+        this.direccion = -1;
+        vx = lerp(vx, -velMax * 1.4, 0.04);
+      } else if (keyIsDown(this.controles.der)) {
+        this.direccion = 1;
+        vx = lerp(vx, velMax * 1.4, 0.04);
+      } else {
+        vx *= 0.985;
+      }
+    } else {
+      if (keyIsDown(this.controles.izq)) {
+        this.direccion = -1;
+        vx = -velMax;
+      } else if (keyIsDown(this.controles.der)) {
+        this.direccion = 1;
+        vx = velMax;
+      } else {
+        vx *= 0.75;
+      }
     }
 
     Body.setVelocity(this.body, { x: vx, y: this.body.velocity.y });
   }
 
   saltar() {
+    if (this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
+
     if (abs(this.body.velocity.y) < 1.5) {
-      let fuerzaSalto = this.tiempoCongelado > 0 ? this.datos.salto * 0.7 : this.datos.salto;
+      let fuerzaSalto = this.tiempoCongelado > 0 ? this.datos.salto * 0.55 : this.datos.salto;
       Body.setVelocity(this.body, { x: this.body.velocity.x, y: -fuerzaSalto });
     }
   }
 
   accionPelota() {
+    if (this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
+
     if (this.pelotaTomada) {
       this.pelotaTomada.lanzar(this, this.direccion);
       this.pelotaTomada = null;
@@ -386,7 +405,7 @@ class Jugador {
     for (let p of pelotas) {
       if (!p.portador && !p.lanzada) {
         let d = dist(pos.x, pos.y, p.body.position.x, p.body.position.y);
-        if (d < 55) {
+        if (d < 60) {
           this.pelotaTomada = p;
           p.recoger(this);
           break;
@@ -398,12 +417,20 @@ class Jugador {
   actualizarEfectos() {
     if (this.tiempoQuemado > 0) {
       this.tiempoQuemado--;
-      if (this.tiempoQuemado % 40 === 0) {
+      if (this.tiempoQuemado % 30 === 0) {
         this.dano += 4;
+        this.vida = max(0, this.vida - 3);
       }
     }
     if (this.tiempoCongelado > 0) this.tiempoCongelado--;
     if (this.tiempoResbaloso > 0) this.tiempoResbaloso--;
+    if (this.tiempoAturdido > 0) this.tiempoAturdido--;
+    if (this.tiempoMensaje > 0) this.tiempoMensaje--;
+  }
+
+  mostrarEfectoTexto(texto) {
+    this.mensajeEfecto = texto;
+    this.tiempoMensaje = 55;
   }
 
   actualizarEstadoAnimacion() {
@@ -419,16 +446,16 @@ class Jugador {
     }
   }
 
-  perderVida() {
+  reaparecer() {
     if (this.pelotaTomada) {
       this.pelotaTomada.portador = null;
+      this.pelotaTomada.body.isSensor = false;
       this.pelotaTomada = null;
     }
-    this.vidas--;
-    this.dano = 0;
     this.tiempoQuemado = 0;
     this.tiempoCongelado = 0;
     this.tiempoResbaloso = 0;
+    this.tiempoAturdido = 0;
 
     Body.setPosition(this.body, { x: width / 2, y: 120 });
     Body.setVelocity(this.body, { x: 0, y: 0 });
@@ -441,15 +468,44 @@ class Jugador {
 
     push();
     translate(pos.x, pos.y);
-    scale(this.direccion, 1);
 
-    if (this.tiempoQuemado > 0) tint(255, 120, 80);
-    else if (this.tiempoCongelado > 0) tint(130, 210, 255);
-    else if (this.tiempoResbaloso > 0) tint(170, 230, 255);
+    push();
+    scale(this.direccion, 1);
+    if (this.tiempoQuemado > 0) tint(255, 100, 50);
+    else if (this.tiempoCongelado > 0) tint(100, 200, 255);
+    else if (this.tiempoResbaloso > 0) tint(150, 220, 255);
 
     imageMode(CENTER);
     image(sprites[this.datos.id], 0, 0, frame[2], frame[3], frame[0], frame[1], frame[2], frame[3]);
     noTint();
+    pop();
+
+    if (this.tiempoQuemado > 0) {
+      noStroke();
+      fill(255, random(80, 180), 0, 200);
+      ellipse(random(-12, 12), random(-25, 10), random(8, 16));
+      ellipse(random(-12, 12), random(-25, 10), random(6, 12));
+    }
+
+    if (this.tiempoCongelado > 100) {
+      fill(150, 230, 255, 120);
+      stroke(220, 250, 255);
+      strokeWeight(2);
+      rectMode(CENTER);
+      rect(0, 0, this.w + 12, this.h + 8, 6);
+    }
+
+    noStroke();
+    textAlign(CENTER, BOTTOM);
+    textSize(13);
+    fill(255);
+    text(this.controles.nombre, 0, -40);
+
+    if (this.tiempoMensaje > 0) {
+      fill(255, 230, 60);
+      textSize(14);
+      text(this.mensajeEfecto, 0, -56);
+    }
     pop();
   }
 }
@@ -457,11 +513,12 @@ class Jugador {
 class Pelota {
   constructor(x, y, tipo) {
     this.tipo = tipo;
-    this.r = tipo === "piedra" ? 18 : 14;
+    this.r = tipo === "piedra" ? 21 : (tipo === "nieve" ? 13 : 15);
     this.portador = null;
     this.lanzada = false;
     this.atacante = null;
     this.usada = false;
+    this.rebotes = 0;
 
     let opciones = this.obtenerPropiedadesFisicas(tipo);
     this.body = Bodies.circle(x, y, this.r, opciones);
@@ -471,15 +528,15 @@ class Pelota {
 
   obtenerPropiedadesFisicas(tipo) {
     if (tipo === "fuego") {
-      return { restitution: 0.2, density: 0.002, frictionAir: 0.001 };
+      return { restitution: 0.2, density: 0.002, frictionAir: 0.0005 };
     }
     if (tipo === "piedra") {
-      return { restitution: 0.1, density: 0.009, frictionAir: 0.004 };
+      return { restitution: 0.08, density: 0.012, frictionAir: 0.003 };
     }
     if (tipo === "nieve") {
-      return { restitution: 0.4, density: 0.0008, frictionAir: 0.015 };
+      return { restitution: 0.35, density: 0.0006, frictionAir: 0.022 };
     }
-    return { restitution: 0.92, density: 0.0018, friction: 0.0001 };
+    return { restitution: 0.95, density: 0.002, friction: 0.0001 };
   }
 
   recoger(jugador) {
@@ -492,11 +549,45 @@ class Pelota {
     this.portador = null;
     this.atacante = jugador;
     this.lanzada = true;
+    this.rebotes = 0;
     this.body.isSensor = false;
 
-    let velX = this.tipo === "fuego" ? 16 : (this.tipo === "piedra" ? 11 : 13);
-    Body.setPosition(this.body, { x: jugador.body.position.x + dir * 32, y: jugador.body.position.y - 8 });
-    Body.setVelocity(this.body, { x: dir * velX, y: -2.5 });
+    let velX = 13;
+    let velY = -2.5;
+
+    if (this.tipo === "fuego") {
+      velX = 19;
+      velY = -1.2;
+    } else if (this.tipo === "piedra") {
+      velX = 11.5;
+      velY = -4.2;
+    } else if (this.tipo === "nieve") {
+      velX = 12;
+      velY = -2.0;
+    } else if (this.tipo === "agua") {
+      velX = 14.5;
+      velY = -5.5;
+    }
+
+    Body.setPosition(this.body, { x: jugador.body.position.x + dir * 34, y: jugador.body.position.y - 8 });
+    Body.setVelocity(this.body, { x: dir * velX, y: velY });
+  }
+
+  rebotarEnPlataforma(plataforma) {
+    if (this.portador) return;
+
+    if (this.tipo === "agua" && (this.lanzada || abs(this.body.velocity.y) > 4)) {
+      let px = constrain(this.body.position.x, plataforma.x - plataforma.w / 2 + 40, plataforma.x + plataforma.w / 2 - 40);
+      charcos.push(new Charco(px, plataforma.y - plataforma.h / 2));
+    }
+
+    if (this.lanzada) {
+      this.rebotes++;
+      let maxRebotes = this.tipo === "agua" ? 4 : 2;
+      if (this.rebotes >= maxRebotes) {
+        this.lanzada = false;
+      }
+    }
   }
 
   actualizar() {
@@ -504,7 +595,7 @@ class Pelota {
       let pos = this.portador.body.position;
       Body.setPosition(this.body, { x: pos.x + this.portador.direccion * 22, y: pos.y - 5 });
       Body.setVelocity(this.body, { x: 0, y: 0 });
-    } else if (this.lanzada && abs(this.body.velocity.x) < 1.2 && abs(this.body.velocity.y) < 1.2) {
+    } else if (this.lanzada && abs(this.body.velocity.x) < 1.0 && abs(this.body.velocity.y) < 1.0) {
       this.lanzada = false;
     }
   }
@@ -513,40 +604,77 @@ class Pelota {
     if (!this.lanzada || jugador === this.atacante) return;
 
     let dir = this.body.velocity.x >= 0 ? 1 : -1;
-    let escala = 1 + jugador.dano / 80;
+    let escala = 1 + jugador.dano / 70;
 
     if (this.tipo === "fuego") {
-      jugador.dano += 12;
-      jugador.tiempoQuemado = 160;
-      Body.applyForce(jugador.body, jugador.body.position, { x: dir * 0.035 * escala, y: -0.02 });
+      jugador.vida = max(0, jugador.vida - 14);
+      jugador.dano += 14;
+      jugador.tiempoQuemado = 210;
+      jugador.mostrarEfectoTexto("🔥 ¡QUEMADURA! -14");
+      Body.setVelocity(jugador.body, { x: dir * 6, y: -4 });
+      this.usada = true;
     } else if (this.tipo === "piedra") {
-      jugador.dano += 22;
-      Body.applyForce(jugador.body, jugador.body.position, { x: dir * 0.085 * escala, y: -0.05 });
+      jugador.vida = max(0, jugador.vida - 28);
+      jugador.dano += 28;
+      jugador.tiempoAturdido = 32;
+      jugador.mostrarEfectoTexto("🪨 ¡SUPER KNOCKBACK! -28");
+      Body.setVelocity(jugador.body, { x: dir * 16 * escala, y: -10.5 });
+      this.usada = true;
     } else if (this.tipo === "nieve") {
-      jugador.dano += 10;
-      jugador.tiempoCongelado = 180;
-      Body.applyForce(jugador.body, jugador.body.position, { x: dir * 0.025 * escala, y: -0.015 });
+      jugador.vida = max(0, jugador.vida - 8);
+      jugador.dano += 8;
+      jugador.tiempoCongelado = 190;
+      jugador.mostrarEfectoTexto("❄️ ¡CONGELADO! -8");
+      Body.setVelocity(jugador.body, { x: dir * 2.5, y: -2 });
+      this.usada = true;
     } else if (this.tipo === "agua") {
+      jugador.vida = max(0, jugador.vida - 10);
       jugador.dano += 10;
-      jugador.tiempoResbaloso = 200;
-      Body.setVelocity(jugador.body, { x: dir * 11 * escala, y: -4 });
+      jugador.tiempoResbaloso = 220;
+      jugador.mostrarEfectoTexto("💧 ¡EMPUJÓN Y RESBALÓN! -10");
+      charcos.push(new Charco(jugador.body.position.x, jugador.body.position.y + 30));
+      Body.setVelocity(jugador.body, { x: dir * 12.5 * escala, y: -5 });
+      Body.setVelocity(this.body, { x: -this.body.velocity.x * 0.85, y: -7 });
+      this.rebotes++;
+      if (this.rebotes >= 3) this.usada = true;
     }
-
-    this.usada = true;
   }
 
   mostrar() {
     let pos = this.body.position;
     push();
     translate(pos.x, pos.y);
-    noStroke();
+    rotate(this.body.angle);
 
-    if (this.tipo === "fuego") fill(255, 90, 20);
-    else if (this.tipo === "piedra") fill(130, 120, 110);
-    else if (this.tipo === "nieve") fill(180, 235, 255);
-    else fill(30, 145, 255);
-
-    ellipse(0, 0, this.r * 2);
+    if (this.tipo === "fuego") {
+      noStroke();
+      fill(255, 180, 0, 140);
+      ellipse(-this.body.velocity.x * 0.6, -this.body.velocity.y * 0.6, this.r * 2.3);
+      fill(255, 70, 15);
+      ellipse(0, 0, this.r * 2);
+      fill(255, 220, 60);
+      ellipse(-3, -3, this.r);
+    } else if (this.tipo === "piedra") {
+      stroke(55, 50, 45);
+      strokeWeight(2);
+      fill(125, 115, 105);
+      ellipse(0, 0, this.r * 2);
+      line(-8, -5, 5, 7);
+      line(6, -7, -4, 6);
+    } else if (this.tipo === "nieve") {
+      stroke(255);
+      strokeWeight(1.5);
+      fill(175, 235, 255);
+      ellipse(0, 0, this.r * 2);
+      line(-6, 0, 6, 0);
+      line(0, -6, 0, 6);
+    } else {
+      noStroke();
+      fill(25, 145, 255);
+      ellipse(0, 0, this.r * 2);
+      fill(170, 230, 255);
+      ellipse(-4, -4, this.r * 0.8);
+    }
     pop();
   }
 
