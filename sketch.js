@@ -19,6 +19,9 @@ let pelotas = [];
 let charcos = [];
 let particulasPolvo = [];
 let tiempoInicioPartida = 0;
+let ganador = null;
+
+const duracionInvulnerabilidad = 75;
 
 let fondos = [];
 let sprites = {};
@@ -128,6 +131,7 @@ function iniciarJuego() {
   charcos = [];
   particulasPolvo = [];
   tiempoInicioPartida = frameCount;
+  ganador = null;
 
   for (let datosPlataforma of plataformasPorEscenario[fondoActual]) {
     plataformas.push(new Plataforma(datosPlataforma));
@@ -154,6 +158,9 @@ function draw() {
     for (let plat of plataformas) plat.actualizar();
     Engine.update(engine);
     dibujarJuego();
+    if (estado === "fin") dibujarPantallaGanador();
+  } else if (estado === "fin") {
+    dibujarPantallaGanador();
   }
 }
 
@@ -260,13 +267,107 @@ function dibujarJuego() {
   }
 
   jugador1.actualizar();
-  jugador1.mostrar();
-
   jugador2.actualizar();
-  jugador2.mostrar();
+  procesarMuertes();
+
+  if (estado === "jugando") {
+    jugador1.mostrar();
+    jugador2.mostrar();
+  }
+  dibujarBarraVida(jugador1, 25, 18);
+  dibujarBarraVida(jugador2, width - 275, 18);
+}
+
+function procesarMuertes() {
+  for (let jugador of [jugador1, jugador2]) {
+    if (!jugador.muertePendiente || jugador.vidas <= 0) continue;
+
+    jugador.muertePendiente = false;
+    jugador.vidas--;
+    if (jugador.vidas > 0) {
+      jugador.reaparecer();
+    } else {
+      jugador.liberarPelota();
+      jugador.vida = 0;
+      World.remove(world, jugador.body);
+    }
+  }
+
+  if (jugador1.vidas === 0 || jugador2.vidas === 0) {
+    ganador = jugador1.vidas === 0 && jugador2.vidas === 0 ? null :
+      (jugador1.vidas > 0 ? jugador1 : jugador2);
+    estado = "fin";
+  }
+}
+
+function dibujarBarraVida(jugador, x, y) {
+  const ancho = 250;
+  const salud = constrain(jugador.vida, 0, jugador.vidaMaxima);
+
+  push();
+  rectMode(CORNER);
+  noStroke();
+  fill(0, 0, 0, 175);
+  rect(x, y, ancho, 76, 10);
+
+  fill(jugador === jugador1 ? color(255, 105, 105) : color(105, 175, 255));
+  textAlign(LEFT, CENTER);
+  textSize(15);
+  text(jugador.controles.nombre + " · " + jugador.datos.nombre, x + 12, y + 17);
+
+  fill(55, 58, 70);
+  rect(x + 12, y + 31, ancho - 24, 16, 5);
+  fill(salud > 30 ? color(95, 225, 120) : color(255, 100, 85));
+  rect(x + 12, y + 31, (ancho - 24) * salud / jugador.vidaMaxima, 16, 5);
+
+  fill(255);
+  textSize(13);
+  text("Salud: " + ceil(salud) + "/" + jugador.vidaMaxima, x + 12, y + 61);
+  textAlign(RIGHT, CENTER);
+  text("Vidas: " + jugador.vidas, x + ancho - 12, y + 61);
+  pop();
+}
+
+function dibujarPantallaGanador() {
+  imageMode(CORNER);
+  image(fondos[fondoActual], 0, 0, width, height);
+  fill(0, 0, 0, 195);
+  rect(0, 0, width, height);
+  dibujarBarraVida(jugador1, 25, 18);
+  dibujarBarraVida(jugador2, width - 275, 18);
+
+  textAlign(CENTER, CENTER);
+  fill(255, 210, 50);
+  textSize(42);
+  text("FIN DE PARTIDA", width / 2, 95);
+
+  if (ganador) {
+    fill(255);
+    textSize(28);
+    text("GANA " + ganador.controles.nombre + " · " + ganador.datos.nombre, width / 2, 165);
+    const lista = cuadrosSprites[ganador.datos.id].idle;
+    const cuadro = lista[floor(frameCount / 12) % lista.length];
+    imageMode(CENTER);
+    image(sprites[ganador.datos.id], width / 2, 320,
+      cuadro[2] * 2.5, cuadro[3] * 2.5,
+      cuadro[0], cuadro[1], cuadro[2], cuadro[3]);
+  } else {
+    fill(255);
+    textSize(32);
+    text("¡EMPATE!", width / 2, 285);
+  }
+
+  fill(100, 255, 140);
+  textSize(21);
+  text("ENTER: revancha", width / 2, 490);
+  fill(255);
+  textSize(17);
+  text("ESC: volver a selección", width / 2, 530);
 }
 
 function verificarColision(bodyA, bodyB) {
+  if (estado !== "jugando") return;
+
   let pelota = bodyA.pelotaRef || bodyB.pelotaRef;
   let jugador = bodyA.jugadorRef || bodyB.jugadorRef;
   let plataforma = bodyA.plataformaRef || bodyB.plataformaRef;
@@ -332,6 +433,12 @@ function keyPressed() {
     if (keyCode === RIGHT_ARROW) seleccionJ2 = (seleccionJ2 + 1) % 4;
     if (key === "e" || key === "E") fondoActual = (fondoActual + 1) % 3;
     if (keyCode === ENTER) iniciarJuego();
+    return;
+  }
+
+  if (estado === "fin") {
+    if (keyCode === ENTER) iniciarJuego();
+    else if (keyCode === ESCAPE) estado = "seleccion";
     return;
   }
 
@@ -572,6 +679,8 @@ class Jugador {
   constructor(x, y, datos, controles, dirInicial) {
     this.datos = datos;
     this.controles = controles;
+    this.xInicial = x;
+    this.yInicial = y;
     this.w = 36;
     this.h = 64;
 
@@ -583,10 +692,14 @@ class Jugador {
     this.body.jugadorRef = this;
     World.add(world, this.body);
 
-    this.vida = 100;
+    this.vidaMaxima = 100;
+    this.vida = this.vidaMaxima;
+    this.vidas = 3;
     this.dano = 0;
     this.direccion = dirInicial;
     this.pelotaTomada = null;
+    this.muertePendiente = false;
+    this.tiempoInvulnerable = 0;
 
     this.animacion = "idle";
     this.tiempoLanzar = 0;
@@ -599,9 +712,14 @@ class Jugador {
   }
 
   actualizar() {
+    if (this.muertePendiente || this.vidas <= 0) return;
+
+    if (this.tiempoInvulnerable > 0) this.tiempoInvulnerable--;
     this.verificarCharco();
     this.verificarPlataformaMojada();
     this.actualizarEfectos();
+
+    if (this.muertePendiente) return;
 
     if (this.tiempoAturdido <= 0) {
       this.mover();
@@ -611,8 +729,28 @@ class Jugador {
 
     let pos = this.body.position;
     if (pos.y > height + 80 || pos.x < -120 || pos.x > width + 120) {
-      this.reaparecer();
+      this.solicitarMuerte();
     }
+  }
+
+  puedeRecibirDano() {
+    return estado === "jugando" && this.vidas > 0 &&
+      !this.muertePendiente && this.tiempoInvulnerable <= 0;
+  }
+
+  recibirDano(cantidad, danoAcumulado = cantidad) {
+    if (!this.puedeRecibirDano()) return false;
+
+    this.vida = constrain(this.vida - cantidad, 0, this.vidaMaxima);
+    this.dano += danoAcumulado;
+    if (this.vida <= 0) this.muertePendiente = true;
+    return true;
+  }
+
+  solicitarMuerte() {
+    if (estado !== "jugando" || this.vidas <= 0 || this.muertePendiente) return;
+    this.vida = 0;
+    this.muertePendiente = true;
   }
 
   verificarCharco() {
@@ -674,7 +812,8 @@ class Jugador {
   }
 
   saltar() {
-    if (this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
+    if (this.muertePendiente || this.vidas <= 0 ||
+        this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
 
     if (abs(this.body.velocity.y) < 1.5) {
       let fuerzaSalto = this.tiempoCongelado > 0 ? this.datos.salto * 0.55 : this.datos.salto;
@@ -683,7 +822,8 @@ class Jugador {
   }
 
   accionPelota() {
-    if (this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
+    if (this.muertePendiente || this.vidas <= 0 ||
+        this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
 
     if (this.pelotaTomada) {
       this.pelotaTomada.lanzar(this, this.direccion);
@@ -709,8 +849,7 @@ class Jugador {
     if (this.tiempoQuemado > 0) {
       this.tiempoQuemado--;
       if (this.tiempoQuemado % 30 === 0) {
-        this.dano += 4;
-        this.vida = max(0, this.vida - 3);
+        this.recibirDano(3, 4);
       }
     }
     if (this.tiempoCongelado > 0) this.tiempoCongelado--;
@@ -737,19 +876,52 @@ class Jugador {
     }
   }
 
+  liberarPelota() {
+    if (!this.pelotaTomada) return;
+    const pelota = this.pelotaTomada;
+    this.pelotaTomada = null;
+    if (!pelotas.includes(pelota)) return;
+
+    pelota.portador = null;
+    pelota.plataformaApoyada = null;
+    pelota.lanzada = false;
+    pelota.body.isSensor = false;
+    Body.setPosition(pelota.body, {
+      x: this.body.position.x + this.direccion * 22,
+      y: this.body.position.y - 5
+    });
+    Body.setVelocity(pelota.body, { x: 0, y: 0 });
+  }
+
   reaparecer() {
-    if (this.pelotaTomada) {
-      this.pelotaTomada.portador = null;
-      this.pelotaTomada.body.isSensor = false;
-      this.pelotaTomada = null;
-    }
+    this.liberarPelota();
+    this.vida = this.vidaMaxima;
+    this.dano = 0;
+    this.tiempoInvulnerable = duracionInvulnerabilidad;
+    this.tiempoLanzar = 0;
     this.tiempoQuemado = 0;
     this.tiempoCongelado = 0;
     this.tiempoResbaloso = 0;
     this.tiempoAturdido = 0;
+    this.tiempoMensaje = 0;
+    this.mensajeEfecto = "";
+    this.animacion = "idle";
+    this.direccion = this === jugador1 ? 1 : -1;
 
-    Body.setPosition(this.body, { x: width / 2, y: 120 });
+    let x = this.xInicial;
+    const otro = this === jugador1 ? jugador2 : jugador1;
+    if (otro && otro.vidas > 0 && !otro.muertePendiente) {
+      const candidatos = [x, x + (this === jugador1 ? -120 : 120),
+        x + (this === jugador1 ? 120 : -120)];
+      x = candidatos.find(candidato =>
+        abs(candidato - otro.body.position.x) >= this.w + otro.w ||
+        abs(this.yInicial - otro.body.position.y) >= this.h + otro.h) || x;
+    }
+
+    Body.setPosition(this.body, { x: x, y: this.yInicial });
     Body.setVelocity(this.body, { x: 0, y: 0 });
+    Body.setAngle(this.body, 0);
+    Body.setAngularVelocity(this.body, 0);
   }
 
   mostrar() {
@@ -762,9 +934,11 @@ class Jugador {
 
     push();
     scale(this.direccion, 1);
-    if (this.tiempoQuemado > 0) tint(255, 100, 50);
-    else if (this.tiempoCongelado > 0) tint(100, 200, 255);
-    else if (this.tiempoResbaloso > 0) tint(150, 220, 255);
+    const alfa = this.tiempoInvulnerable > 0 && frameCount % 12 < 6 ? 150 : 255;
+    if (this.tiempoQuemado > 0) tint(255, 100, 50, alfa);
+    else if (this.tiempoCongelado > 0) tint(100, 200, 255, alfa);
+    else if (this.tiempoResbaloso > 0) tint(150, 220, 255, alfa);
+    else if (alfa < 255) tint(255, alfa);
 
     imageMode(CENTER);
     image(sprites[this.datos.id], 0, 0, frame[2], frame[3], frame[0], frame[1], frame[2], frame[3]);
@@ -966,9 +1140,7 @@ class Pelota {
         jugador.body.position.y
       );
 
-      if (distancia <= radioImpactoArea) {
-        jugador.vida = max(0, jugador.vida - danoImpactoArea);
-        jugador.dano += danoImpactoArea;
+      if (distancia <= radioImpactoArea && jugador.recibirDano(danoImpactoArea)) {
         jugador.mostrarEfectoTexto(`¡IMPACTO DE ${this.tipo.toUpperCase()}! -${danoImpactoArea}`);
         Body.setVelocity(jugador.body, { x: 0, y: -4 });
       }
@@ -976,11 +1148,10 @@ class Pelota {
   }
 
   impactar(jugador) {
-    if (!this.lanzada || jugador === this.atacante) return;
+    if (!this.lanzada || jugador === this.atacante || !jugador.puedeRecibirDano()) return;
 
     if (this.peligroEscenario) {
-      jugador.vida = max(0, jugador.vida - 10);
-      jugador.dano += 10;
+      jugador.recibirDano(10);
       jugador.mostrarEfectoTexto("¡OBJETO DEL ESCENARIO! -10");
       Body.setVelocity(jugador.body, { x: this.body.velocity.x >= 0 ? 7 : -7, y: -5 });
       this.usada = true;
@@ -991,29 +1162,25 @@ class Pelota {
     let escala = 1 + jugador.dano / 70;
 
     if (this.tipo === "fuego") {
-      jugador.vida = max(0, jugador.vida - 14);
-      jugador.dano += 14;
+      jugador.recibirDano(14);
       jugador.tiempoQuemado = 210;
       jugador.mostrarEfectoTexto("🔥 ¡QUEMADURA! -14");
       Body.setVelocity(jugador.body, { x: dir * 6, y: -4 });
       this.usada = true;
     } else if (this.tipo === "piedra") {
-      jugador.vida = max(0, jugador.vida - 28);
-      jugador.dano += 28;
+      jugador.recibirDano(28);
       jugador.tiempoAturdido = 32;
       jugador.mostrarEfectoTexto("🪨 ¡SUPER KNOCKBACK! -28");
       Body.setVelocity(jugador.body, { x: dir * 16 * escala, y: -10.5 });
       this.usada = true;
     } else if (this.tipo === "nieve") {
-      jugador.vida = max(0, jugador.vida - 8);
-      jugador.dano += 8;
+      jugador.recibirDano(8);
       jugador.tiempoCongelado = 190;
       jugador.mostrarEfectoTexto("❄️ ¡CONGELADO! -8");
       Body.setVelocity(jugador.body, { x: dir * 2.5, y: -2 });
       this.usada = true;
     } else if (this.tipo === "agua") {
-      jugador.vida = max(0, jugador.vida - 10);
-      jugador.dano += 10;
+      jugador.recibirDano(10);
       jugador.tiempoResbaloso = 220;
       jugador.mostrarEfectoTexto("💧 ¡EMPUJÓN Y RESBALÓN! -10");
       charcos.push(new Charco(jugador.body.position.x, jugador.body.position.y + 30));
@@ -1100,6 +1267,10 @@ class Pelota {
   }
 
   eliminar() {
+    if (this.portador && this.portador.pelotaTomada === this) {
+      this.portador.pelotaTomada = null;
+    }
+    this.portador = null;
     World.remove(world, this.body);
   }
 }
