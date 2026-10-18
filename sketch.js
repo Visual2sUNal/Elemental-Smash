@@ -17,11 +17,52 @@ let jugador2;
 let plataformas = [];
 let pelotas = [];
 let charcos = [];
+let particulasPolvo = [];
+let tiempoInicioPartida = 0;
 
 let fondos = [];
 let sprites = {};
 
 const nombresFondos = ["Playa", "Rocas", "Nieve"];
+const tiposPeligro = ["coco", "rocaEscenario", "bolaNieve"];
+const danoImpactoArea = 5;
+const radioImpactoArea = 90;
+const plataformasPorEscenario = [
+  [
+    { x: 450, y: 520, w: 680, h: 30, estilo: "arena", fragil: true, principal: true },
+    { x: 180, y: 300, w: 175, h: 22, estilo: "madera", movil: true, eje: "y", amplitud: 130, velocidad: 0.018 },
+    { x: 450, y: 315, w: 175, h: 22, estilo: "madera", movil: true, eje: "x", amplitud: 55, velocidad: 0.018 },
+    { x: 720, y: 290, w: 175, h: 22, estilo: "madera", movil: true, eje: "y", amplitud: 140, velocidad: 0.026 }
+  ],
+  [
+    { x: 450, y: 520, w: 680, h: 30, estilo: "roca", principal: true },
+    { x: 250, y: 405, w: 155, h: 24, estilo: "roca" },
+    { x: 650, y: 405, w: 155, h: 24, estilo: "roca" },
+    {
+      x: 760,
+      y: 120,
+      w: 145,
+      h: 22,
+      estilo: "roca",
+      movil: true,
+      trayectoria: [
+        [760, 120],
+        [140, 120],
+        [140, 470],
+        [760, 470]
+      ],
+      velocidadTrayectoria: 2.2
+    },
+    { x: 450, y: 170, w: 215, h: 22, estilo: "roca" }
+  ],
+  [
+    { x: 450, y: 520, w: 680, h: 30, estilo: "hielo", principal: true, resistencia: 25 },
+    { x: 170, y: 400, w: 160, h: 22, estilo: "hielo", resistencia: 8 },
+    { x: 390, y: 315, w: 150, h: 22, estilo: "hielo", movil: true, eje: "x", amplitud: 70, velocidad: 0.02, resistencia: 6 },
+    { x: 680, y: 400, w: 160, h: 22, estilo: "hielo", resistencia: 8 },
+    { x: 535, y: 215, w: 155, h: 22, estilo: "hielo", movil: true, eje: "x", amplitud: 150, velocidad: 0.012, resistencia: 5 }
+  ]
+];
 
 const personajes = [
   { id: "beisbol", nombre: "Beisbolista", vel: 4.5, salto: 11, peso: 1.0 },
@@ -85,11 +126,12 @@ function iniciarJuego() {
   plataformas = [];
   pelotas = [];
   charcos = [];
+  particulasPolvo = [];
+  tiempoInicioPartida = frameCount;
 
-  plataformas.push(new Plataforma(450, 520, 680, 30));
-  plataformas.push(new Plataforma(250, 380, 180, 18));
-  plataformas.push(new Plataforma(650, 380, 180, 18));
-  plataformas.push(new Plataforma(450, 260, 200, 18));
+  for (let datosPlataforma of plataformasPorEscenario[fondoActual]) {
+    plataformas.push(new Plataforma(datosPlataforma));
+  }
 
   let controles1 = { izq: 65, der: 68, salto: 87, lanzar: 70, nombre: "J1" };
   let controles2 = { izq: LEFT_ARROW, der: RIGHT_ARROW, salto: UP_ARROW, lanzar: 75, nombre: "J2" };
@@ -109,6 +151,7 @@ function draw() {
   if (estado === "seleccion") {
     dibujarMenuSeleccion();
   } else if (estado === "jugando") {
+    for (let plat of plataformas) plat.actualizar();
     Engine.update(engine);
     dibujarJuego();
   }
@@ -182,6 +225,7 @@ function dibujarMenuSeleccion() {
 function dibujarJuego() {
   imageMode(CORNER);
   image(fondos[fondoActual], 0, 0, width, height);
+  actualizarParticulasPolvo();
 
   for (let plat of plataformas) {
     plat.mostrar();
@@ -200,10 +244,16 @@ function dibujarJuego() {
     pelotas.push(new Pelota(random(180, width - 180), -20, random(tipos)));
   }
 
+  if (frameCount - tiempoInicioPartida > 360 &&
+      frameCount % 150 === 0 &&
+      pelotas.length < 8) {
+    pelotas.push(new Pelota(random(100, width - 100), -30, tiposPeligro[fondoActual], true));
+  }
+
   for (let i = pelotas.length - 1; i >= 0; i--) {
     pelotas[i].actualizar();
     pelotas[i].mostrar();
-    if (pelotas[i].fueraDePantalla() || pelotas[i].usada) {
+    if (pelotas[i].fueraDePantalla() || pelotas[i].usada || pelotas[i].expirada()) {
       pelotas[i].eliminar();
       pelotas.splice(i, 1);
     }
@@ -225,6 +275,52 @@ function verificarColision(bodyA, bodyB) {
     pelota.impactar(jugador);
   } else if (pelota && plataforma) {
     pelota.rebotarEnPlataforma(plataforma);
+  } else if (jugador && plataforma) {
+    crearParticulasPolvo(plataforma.x, plataforma.y - plataforma.h / 2);
+  }
+}
+
+function crearParticulasPolvo(x, y) {
+  for (let i = 0; i < 12; i++) {
+    particulasPolvo.push({
+      x: x + random(-28, 28),
+      y: y,
+      vx: random(-1.5, 1.5),
+      vy: random(-2.5, -0.8),
+      vida: 24,
+      tamano: random(2, 5),
+      color: [185, 170, 145]
+    });
+  }
+}
+
+function crearParticulasNieve(x, y) {
+  for (let i = 0; i < 18; i++) {
+    particulasPolvo.push({
+      x: x + random(-35, 35),
+      y: y + random(-2, 5),
+      vx: random(-2, 2),
+      vy: random(-3, -0.8),
+      vida: 32,
+      tamano: random(2, 6),
+      color: [225, 248, 255]
+    });
+  }
+}
+
+function actualizarParticulasPolvo() {
+  noStroke();
+  for (let i = particulasPolvo.length - 1; i >= 0; i--) {
+    const particula = particulasPolvo[i];
+    particula.x += particula.vx;
+    particula.y += particula.vy;
+    particula.vy += 0.12;
+    particula.vida--;
+
+    fill(particula.color[0], particula.color[1], particula.color[2], particula.vida * 7);
+    ellipse(particula.x, particula.y, particula.tamano);
+
+    if (particula.vida <= 0) particulasPolvo.splice(i, 1);
   }
 }
 
@@ -253,23 +349,204 @@ function keyPressed() {
 }
 
 class Plataforma {
-  constructor(x, y, w, h) {
-    this.x = x;
-    this.y = y;
-    this.w = w;
-    this.h = h;
-    this.body = Bodies.rectangle(x, y, w, h, { isStatic: true, friction: 0.08 });
+  constructor(datos) {
+    this.xInicial = datos.x;
+    this.yInicial = datos.y;
+    this.x = datos.x;
+    this.y = datos.y;
+    this.w = datos.w;
+    this.h = datos.h;
+    this.estilo = datos.estilo;
+    this.movil = datos.movil || false;
+    this.eje = datos.eje || "x";
+    this.amplitud = datos.amplitud || 0;
+    this.velocidad = datos.velocidad || 0;
+    this.trayectoria = datos.trayectoria || null;
+    this.velocidadTrayectoria = datos.velocidadTrayectoria || 0;
+    this.puntoTrayectoria = 0;
+    this.progresoTrayectoria = 0;
+    this.fragil = datos.fragil || false;
+    this.principal = datos.principal || false;
+    this.resistenciaMaxima = datos.resistencia || 0;
+    this.resistencia = this.resistenciaMaxima;
+    this.grietas = 0;
+    this.mojada = false;
+    this.tiempoMojada = 0;
+    this.pisadas = 0;
+    this.jugadoresSobre = { J1: false, J2: false };
+    this.desaparecida = false;
+    this.tiempoDesaparecida = 0;
+    this.body = Bodies.rectangle(this.x, this.y, this.w, this.h, {
+      isStatic: true,
+      friction: this.estilo === "hielo" ? 0.01 : 0.08
+    });
     this.body.plataformaRef = this;
     World.add(world, this.body);
   }
 
+  actualizar() {
+    if (this.desaparecida) {
+      this.tiempoDesaparecida--;
+      if (this.tiempoDesaparecida <= 0) this.reaparecer();
+      return;
+    }
+
+    if (this.trayectoria) {
+      this.actualizarTrayectoria();
+    } else if (this.movil) {
+      if (this.eje === "y") {
+        this.y = this.yInicial + sin(frameCount * this.velocidad) * this.amplitud;
+      } else {
+        this.x = this.xInicial + sin(frameCount * this.velocidad) * this.amplitud;
+      }
+      Body.setPosition(this.body, { x: this.x, y: this.y });
+    }
+
+    if (this.mojada) this.tiempoMojada--;
+    if (this.tiempoMojada <= 0) this.mojada = false;
+
+    this.registrarPisadas();
+  }
+
+  actualizarTrayectoria() {
+    const inicio = this.trayectoria[this.puntoTrayectoria];
+    const siguiente = this.trayectoria[(this.puntoTrayectoria + 1) % this.trayectoria.length];
+    const distancia = dist(inicio[0], inicio[1], siguiente[0], siguiente[1]);
+
+    this.progresoTrayectoria += this.velocidadTrayectoria / distancia;
+    if (this.progresoTrayectoria >= 1) {
+      this.progresoTrayectoria = 0;
+      this.puntoTrayectoria = (this.puntoTrayectoria + 1) % this.trayectoria.length;
+    }
+
+    this.x = lerp(inicio[0], siguiente[0], this.progresoTrayectoria);
+    this.y = lerp(inicio[1], siguiente[1], this.progresoTrayectoria);
+    Body.setPosition(this.body, { x: this.x, y: this.y });
+  }
+
+  mojar() {
+    this.mojada = true;
+    this.tiempoMojada = 360;
+  }
+
+  registrarPisadas() {
+    if ((!this.fragil && this.resistenciaMaxima <= 0) || this.desaparecida) return;
+
+    const jugadores = [
+      ["J1", jugador1],
+      ["J2", jugador2]
+    ];
+
+    for (let [id, jugador] of jugadores) {
+      if (!jugador) continue;
+
+      const pies = jugador.body.position.y + jugador.h / 2;
+      const sobrePlataforma =
+        abs(jugador.body.position.x - this.x) <= this.w / 2 + jugador.w / 2 &&
+        abs(pies - (this.y - this.h / 2)) <= 9 &&
+        jugador.body.velocity.y >= -0.5;
+
+      if (sobrePlataforma && !this.jugadoresSobre[id]) {
+        if (this.resistenciaMaxima > 0) {
+          this.recibirDano(1);
+        } else {
+          this.pisadas++;
+          if (this.pisadas >= 11) {
+            this.desaparecer();
+            return;
+          }
+        }
+      }
+      this.jugadoresSobre[id] = sobrePlataforma;
+    }
+  }
+
+  desaparecer() {
+    this.desaparecida = true;
+    this.tiempoDesaparecida = this.estilo === "hielo" ? 180 : 120;
+    this.jugadoresSobre = { J1: false, J2: false };
+    this.body.collisionFilter.mask = 0;
+  }
+
+  reaparecer() {
+    this.desaparecida = false;
+    this.pisadas = 0;
+    this.resistencia = this.resistenciaMaxima;
+    this.grietas = 0;
+    this.body.collisionFilter.mask = 0xFFFFFFFF;
+    Body.setPosition(this.body, { x: this.x, y: this.y });
+  }
+
+  recibirDano(cantidad) {
+    if (this.resistenciaMaxima <= 0 || this.desaparecida) return;
+
+    this.resistencia = max(0, this.resistencia - cantidad);
+    this.grietas = 1 - this.resistencia / this.resistenciaMaxima;
+    crearParticulasNieve(this.x, this.y - this.h / 2);
+
+    if (this.resistencia <= 0) this.desaparecer();
+  }
+
   mostrar() {
+    if (this.desaparecida) return;
+
     push();
     rectMode(CENTER);
-    stroke(40);
     strokeWeight(2);
-    fill(110, 95, 80);
-    rect(this.x, this.y, this.w, this.h, 6);
+
+    if (this.estilo === "arena") {
+      stroke(116, 78, 39);
+      fill(212, 164, 76);
+      rect(this.x, this.y, this.w, this.h, 12);
+      stroke(244, 205, 112);
+      line(this.x - this.w / 2 + 12, this.y - 5, this.x + this.w / 2 - 12, this.y - 5);
+      if (this.fragil && this.pisadas >= 6) {
+        stroke(116, 78, 39);
+        line(this.x - 55, this.y - 5, this.x - 42, this.y + 7);
+        line(this.x - 42, this.y + 7, this.x - 28, this.y - 4);
+        line(this.x + 32, this.y - 5, this.x + 46, this.y + 7);
+      }
+    } else if (this.estilo === "madera") {
+      stroke(76, 43, 25);
+      fill(145, 83, 39);
+      rect(this.x, this.y, this.w, this.h, 8);
+      stroke(194, 124, 57);
+      line(this.x - this.w / 2 + 12, this.y + 3, this.x + this.w / 2 - 12, this.y + 3);
+    } else if (this.estilo === "roca") {
+      stroke(48, 45, 55);
+      fill(91, 88, 103);
+      beginShape();
+      vertex(this.x - this.w / 2, this.y + this.h / 2);
+      vertex(this.x - this.w / 2 + 12, this.y - this.h / 2);
+      vertex(this.x + this.w / 2 - 14, this.y - this.h / 2);
+      vertex(this.x + this.w / 2, this.y + this.h / 2);
+      endShape(CLOSE);
+      stroke(137, 132, 151);
+      line(this.x - this.w / 2 + 20, this.y - 4, this.x + this.w / 2 - 25, this.y - 4);
+    } else {
+      stroke(126, 201, 229);
+      fill(184, 237, 250);
+      rect(this.x, this.y, this.w, this.h, 7);
+      stroke(245, 255, 255);
+      line(this.x - this.w / 2 + 10, this.y - 4, this.x - 8, this.y + 5);
+      line(this.x + 5, this.y - 6, this.x + this.w / 2 - 12, this.y + 4);
+      if (this.resistenciaMaxima > 0) {
+        const danoVisual = 1 - this.resistencia / this.resistenciaMaxima;
+        stroke(95, 165, 195);
+        for (let i = 0; i < floor(danoVisual * 5); i++) {
+          const cx = this.x - this.w / 2 + 20 + i * 28;
+          line(cx, this.y - 5, cx + 10, this.y + 5);
+        }
+      }
+    }
+
+    if (this.mojada) {
+      noStroke();
+      fill(45, 170, 235, 185);
+      rect(this.x, this.y - this.h / 2 - 2, this.w - 8, 7, 4);
+      fill(165, 230, 255, 150);
+      rect(this.x - this.w * 0.22, this.y - this.h / 2 - 3, this.w * 0.22, 2, 2);
+    }
     pop();
   }
 }
@@ -323,6 +600,7 @@ class Jugador {
 
   actualizar() {
     this.verificarCharco();
+    this.verificarPlataformaMojada();
     this.actualizarEfectos();
 
     if (this.tiempoAturdido <= 0) {
@@ -344,6 +622,19 @@ class Jugador {
       if (abs(pos.x - c.x) < c.w / 2 && abs(piesY - c.y) < 20) {
         this.tiempoResbaloso = 45;
       }
+    }
+  }
+
+  verificarPlataformaMojada() {
+    const piesY = this.body.position.y + this.h / 2;
+    for (let plataforma of plataformas) {
+      if (!plataforma.mojada) continue;
+
+      const sobrePlataforma =
+        abs(this.body.position.x - plataforma.x) <= plataforma.w / 2 + this.w / 2 &&
+        abs(piesY - (plataforma.y - plataforma.h / 2)) <= 10;
+
+      if (sobrePlataforma) this.tiempoResbaloso = 45;
     }
   }
 
@@ -511,14 +802,19 @@ class Jugador {
 }
 
 class Pelota {
-  constructor(x, y, tipo) {
+  constructor(x, y, tipo, peligroEscenario = false) {
     this.tipo = tipo;
-    this.r = tipo === "piedra" ? 21 : (tipo === "nieve" ? 13 : 15);
+    this.peligroEscenario = peligroEscenario;
+    this.r = tipo === "piedra" || tipo === "rocaEscenario" ? 21 :
+      (tipo === "nieve" || tipo === "bolaNieve" ? 13 : 15);
     this.portador = null;
-    this.lanzada = false;
+    this.lanzada = peligroEscenario;
     this.atacante = null;
     this.usada = false;
     this.rebotes = 0;
+    this.tiempoRestante = -1;
+    this.plataformaApoyada = null;
+    this.offsetPlataforma = { x: 0, y: 0 };
 
     let opciones = this.obtenerPropiedadesFisicas(tipo);
     this.body = Bodies.circle(x, y, this.r, opciones);
@@ -536,17 +832,28 @@ class Pelota {
     if (tipo === "nieve") {
       return { restitution: 0.35, density: 0.0006, frictionAir: 0.022 };
     }
+    if (tipo === "coco") {
+      return { restitution: 0.25, density: 0.004, frictionAir: 0.003 };
+    }
+    if (tipo === "rocaEscenario") {
+      return { restitution: 0.1, density: 0.012, frictionAir: 0.003 };
+    }
+    if (tipo === "bolaNieve") {
+      return { restitution: 0.3, density: 0.001, frictionAir: 0.018 };
+    }
     return { restitution: 0.95, density: 0.002, friction: 0.0001 };
   }
 
   recoger(jugador) {
     this.portador = jugador;
+    this.plataformaApoyada = null;
     this.lanzada = false;
     this.body.isSensor = true;
   }
 
   lanzar(jugador, dir) {
     this.portador = null;
+    this.plataformaApoyada = null;
     this.atacante = jugador;
     this.lanzada = true;
     this.rebotes = 0;
@@ -576,9 +883,28 @@ class Pelota {
   rebotarEnPlataforma(plataforma) {
     if (this.portador) return;
 
+    if (this.peligroEscenario && this.tiempoRestante < 0) {
+      this.lanzada = false;
+      this.tiempoRestante = 300;
+      crearParticulasPolvo(this.body.position.x, plataforma.y - plataforma.h / 2);
+      if (this.tipo === "bolaNieve") plataforma.recibirDano(2);
+      this.aplicarImpactoArea();
+      return;
+    }
+
+    if (this.tipo === "agua" && !plataforma.principal && (this.lanzada || abs(this.body.velocity.y) > 4)) {
+      plataforma.mojar();
+      this.usada = true;
+      return;
+    }
+
     if (this.tipo === "agua" && (this.lanzada || abs(this.body.velocity.y) > 4)) {
       let px = constrain(this.body.position.x, plataforma.x - plataforma.w / 2 + 40, plataforma.x + plataforma.w / 2 - 40);
       charcos.push(new Charco(px, plataforma.y - plataforma.h / 2));
+      this.lanzada = false;
+      this.rebotes = 0;
+      this.apoyarEnPlataforma(plataforma);
+      return;
     }
 
     if (this.lanzada) {
@@ -588,20 +914,78 @@ class Pelota {
         this.lanzada = false;
       }
     }
+
   }
 
   actualizar() {
+    if (this.tiempoRestante >= 0) this.tiempoRestante--;
+
     if (this.portador) {
       let pos = this.portador.body.position;
       Body.setPosition(this.body, { x: pos.x + this.portador.direccion * 22, y: pos.y - 5 });
       Body.setVelocity(this.body, { x: 0, y: 0 });
+    } else if (this.plataformaApoyada) {
+      if (this.plataformaApoyada.desaparecida) {
+        this.plataformaApoyada = null;
+        this.body.isSensor = false;
+      } else {
+        Body.setPosition(this.body, {
+          x: this.plataformaApoyada.x + this.offsetPlataforma.x,
+          y: this.plataformaApoyada.y + this.offsetPlataforma.y
+        });
+        Body.setVelocity(this.body, { x: 0, y: 0 });
+      }
     } else if (this.lanzada && abs(this.body.velocity.x) < 1.0 && abs(this.body.velocity.y) < 1.0) {
       this.lanzada = false;
     }
   }
 
+  apoyarEnPlataforma(plataforma) {
+    this.plataformaApoyada = plataforma;
+    this.offsetPlataforma = {
+      x: constrain(this.body.position.x, plataforma.x - plataforma.w / 2 + this.r, plataforma.x + plataforma.w / 2 - this.r) - plataforma.x,
+      y: -plataforma.h / 2 - this.r
+    };
+    this.body.isSensor = true;
+    Body.setPosition(this.body, {
+      x: plataforma.x + this.offsetPlataforma.x,
+      y: plataforma.y + this.offsetPlataforma.y
+    });
+    Body.setVelocity(this.body, { x: 0, y: 0 });
+  }
+
+  aplicarImpactoArea() {
+    const jugadores = [jugador1, jugador2];
+    for (let jugador of jugadores) {
+      if (!jugador) continue;
+
+      const distancia = dist(
+        this.body.position.x,
+        this.body.position.y,
+        jugador.body.position.x,
+        jugador.body.position.y
+      );
+
+      if (distancia <= radioImpactoArea) {
+        jugador.vida = max(0, jugador.vida - danoImpactoArea);
+        jugador.dano += danoImpactoArea;
+        jugador.mostrarEfectoTexto(`¡IMPACTO DE ${this.tipo.toUpperCase()}! -${danoImpactoArea}`);
+        Body.setVelocity(jugador.body, { x: 0, y: -4 });
+      }
+    }
+  }
+
   impactar(jugador) {
     if (!this.lanzada || jugador === this.atacante) return;
+
+    if (this.peligroEscenario) {
+      jugador.vida = max(0, jugador.vida - 10);
+      jugador.dano += 10;
+      jugador.mostrarEfectoTexto("¡OBJETO DEL ESCENARIO! -10");
+      Body.setVelocity(jugador.body, { x: this.body.velocity.x >= 0 ? 7 : -7, y: -5 });
+      this.usada = true;
+      return;
+    }
 
     let dir = this.body.velocity.x >= 0 ? 1 : -1;
     let escala = 1 + jugador.dano / 70;
@@ -668,6 +1052,34 @@ class Pelota {
       ellipse(0, 0, this.r * 2);
       line(-6, 0, 6, 0);
       line(0, -6, 0, 6);
+    } else if (this.tipo === "coco") {
+      stroke(55, 35, 20);
+      strokeWeight(2);
+      fill(105, 65, 30);
+      ellipse(0, 0, this.r * 2);
+      noStroke();
+      fill(45, 25, 15);
+      ellipse(-5, -5, 4, 4);
+      ellipse(3, -6, 4, 4);
+      ellipse(0, 2, 4, 4);
+    } else if (this.tipo === "rocaEscenario") {
+      stroke(45, 40, 35);
+      strokeWeight(2);
+      fill(90, 85, 80);
+      beginShape();
+      vertex(-this.r, 5);
+      vertex(-this.r * 0.6, -this.r);
+      vertex(this.r * 0.6, -this.r * 0.8);
+      vertex(this.r, 5);
+      vertex(0, this.r);
+      endShape(CLOSE);
+    } else if (this.tipo === "bolaNieve") {
+      stroke(255);
+      strokeWeight(1.5);
+      fill(220, 245, 255);
+      ellipse(0, 0, this.r * 2);
+      line(-6, 0, 6, 0);
+      line(0, -6, 0, 6);
     } else {
       noStroke();
       fill(25, 145, 255);
@@ -681,6 +1093,10 @@ class Pelota {
   fueraDePantalla() {
     let pos = this.body.position;
     return pos.y > height + 100 || pos.x < -100 || pos.x > width + 100;
+  }
+
+  expirada() {
+    return this.tiempoRestante === 0;
   }
 
   eliminar() {
