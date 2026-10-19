@@ -12,6 +12,7 @@ let fondoActual = 0;
 let seleccionJ1 = 0;
 let seleccionJ2 = 1;
 
+
 let jugador1;
 let jugador2;
 let plataformas = [];
@@ -20,6 +21,8 @@ let charcos = [];
 let particulasPolvo = [];
 let tiempoInicioPartida = 0;
 let ganador = null;
+let maxPlataformas = 12;
+let tiempoUltimaPlataforma = 0;
 
 const duracionInvulnerabilidad = 75;
 
@@ -68,10 +71,10 @@ const plataformasPorEscenario = [
 ];
 
 const personajes = [
-  { id: "beisbol", nombre: "Beisbolista", vel: 4.5, salto: 11, peso: 1.0 },
-  { id: "americano", nombre: "Americano", vel: 4.0, salto: 10.5, peso: 1.3 },
-  { id: "soccer", nombre: "Futbolista", vel: 5.2, salto: 11.5, peso: 0.9 },
-  { id: "tenista", nombre: "Tenista", vel: 4.8, salto: 11, peso: 0.95 }
+  { id: "beisbol",   nombre: "Beisbolista", vel: 4.5, salto: 10, peso: 1.0 },
+  { id: "americano", nombre: "Americano",   vel: 4.0, salto: 10, peso: 1.3 },
+  { id: "soccer",    nombre: "Futbolista",  vel: 5.2, salto: 10.5, peso: 0.9 },
+  { id: "tenista",   nombre: "Tenista",     vel: 4.8, salto: 10, peso: 0.95 }
 ];
 
 const cuadrosSprites = {
@@ -113,8 +116,9 @@ function preload() {
 }
 
 function setup() {
-  createCanvas(900, 600);
+  createCanvas(1200, 800);
   engine = Engine.create();
+  engine.gravity.y = 0.98d;
   world = engine.world;
 
   Events.on(engine, "collisionStart", function(event) {
@@ -133,20 +137,23 @@ function iniciarJuego() {
   tiempoInicioPartida = frameCount;
   ganador = null;
 
-  for (let datosPlataforma of plataformasPorEscenario[fondoActual]) {
+  const datosPlataformas = generarPlataformas();
+  for (let datosPlataforma of datosPlataformas) {
     plataformas.push(new Plataforma(datosPlataforma));
   }
 
   let controles1 = { izq: 65, der: 68, salto: 87, lanzar: 70, nombre: "J1" };
   let controles2 = { izq: LEFT_ARROW, der: RIGHT_ARROW, salto: UP_ARROW, lanzar: 75, nombre: "J2" };
 
-  jugador1 = new Jugador(280, 200, personajes[seleccionJ1], controles1, 1);
-  jugador2 = new Jugador(620, 200, personajes[seleccionJ2], controles2, -1);
+  jugador1 = new Jugador(300, 650, personajes[seleccionJ1], controles1, 1);
+  jugador2 = new Jugador(900, 650, personajes[seleccionJ2], controles2, -1);
 
   pelotas.push(new Pelota(340, 40, "fuego"));
   pelotas.push(new Pelota(560, 40, "piedra"));
 
   estado = "jugando";
+
+  tiempoUltimaPlataforma = frameCount;
 }
 
 function draw() {
@@ -246,16 +253,20 @@ function dibujarJuego() {
     }
   }
 
-  if (frameCount % 120 === 0 && pelotas.length < 6) {
+  if (frameCount % 220 === 0 && pelotas.length < 6) {
     let tipos = ["fuego", "piedra", "nieve", "agua"];
     pelotas.push(new Pelota(random(180, width - 180), -20, random(tipos)));
   }
-
-  if (frameCount - tiempoInicioPartida > 360 &&
-      frameCount % 150 === 0 &&
-      pelotas.length < 8) {
+  if (frameCount - tiempoInicioPartida > 500 &&
+      frameCount % 280 === 0 &&
+      pelotas.length < 5) {
     pelotas.push(new Pelota(random(100, width - 100), -30, tiposPeligro[fondoActual], true));
   }
+
+  if (frameCount - tiempoUltimaPlataforma > 600) {
+  if (random() < 0.4) agregarPlataformaExtra();
+  tiempoUltimaPlataforma = frameCount;
+}
 
   for (let i = pelotas.length - 1; i >= 0; i--) {
     pelotas[i].actualizar();
@@ -286,6 +297,7 @@ function procesarMuertes() {
     jugador.vidas--;
     if (jugador.vidas > 0) {
       jugador.reaparecer();
+      agregarPlataformaExtra();
     } else {
       jugador.liberarPelota();
       jugador.vida = 0;
@@ -365,6 +377,135 @@ function dibujarPantallaGanador() {
   text("ESC: volver a selección", width / 2, 530);
 }
 
+function generarPlataformas() {
+  const lista = [];
+
+  const sueloY = 760;
+  lista.push({
+    x: 600, y: sueloY, w: 1200, h: 40,
+    estilo: fondoActual === 0 ? "arena" : (fondoActual === 1 ? "roca" : "hielo"),
+    principal: true
+  });
+
+
+  const columnasX = [180, 460, 740, 1020];   
+  const filasY    = [640, 510, 380, 250];    
+
+  const anchoPlataformaMin = 120;
+  const anchoPlataformaMax = 170;
+  const altoPlataforma     = 22;
+
+  const totalPlataformas = floor(random(6, 11)); 
+
+  const usadas = new Set();
+  const plataformasPorFila = [[], [], [], []]; 
+
+  const distribucion = [1, 1, 1, 1]; 
+  let extras = totalPlataformas - 4;
+  while (extras > 0) {
+    const fila = floor(random(4));
+    if (distribucion[fila] < 4) { 
+      distribucion[fila]++;
+      extras--;
+    }
+  }
+
+  for (let f = 0; f < filasY.length; f++) {
+    const cantidadEnFila = distribucion[f];
+    const columnasDisponibles = [0, 1, 2, 3]; 
+
+    for (let k = 0; k < cantidadEnFila; k++) {
+      const idxCol = floor(random(columnasDisponibles.length));
+      const col = columnasDisponibles.splice(idxCol, 1)[0];
+      const celda = `${f}-${col}`;
+
+      if (usadas.has(celda)) continue;
+      usadas.add(celda);
+
+      const jitterX = random(-40, 40);
+      const jitterY = random(-15, 15);
+
+      let x = columnasX[col] + jitterX;
+      let y = filasY[f] + jitterY;
+
+      const ancho = random(anchoPlataformaMin, anchoPlataformaMax);
+      let intentos = 0;
+      while (haySolapamientoPlataformas(lista, x, y, ancho, altoPlataforma) && intentos < 20) {
+        x = columnasX[col] + random(-40, 40);
+        y = filasY[f] + random(-15, 15);
+        intentos++;
+      }
+      if (intentos >= 20) continue;
+
+      lista.push({
+        x: x,
+        y: y,
+        w: ancho,
+        h: altoPlataforma,
+        estilo: fondoActual === 0 ? "madera" : (fondoActual === 1 ? "roca" : "hielo"),
+        movil: false
+      });
+    }
+  }
+
+  return lista;
+}
+
+function haySolapamientoPlataformas(lista, x, y, w, h) {
+  const margenX = 40;  
+  const margenY = 60;  
+  for (let p of lista) {
+    const solapaX = abs(x - p.x) < (w + p.w) / 2 + margenX;
+    const solapaY = abs(y - p.y) < (h + p.h) / 2 + margenY;
+    if (solapaX && solapaY) return true;
+  }
+  return false;
+}
+
+function agregarPlataformaExtra() {
+  const normales = plataformas.filter(p => !p.principal);
+  if (normales.length >= maxPlataformas - 1) return;
+
+  const columnasX = [180, 460, 740, 1020];
+  const filasY    = [640, 510, 380, 250];
+
+  let referencia = null;
+  for (let p of plataformas) {
+    if (p.principal) continue;
+    if (!referencia || p.y < referencia.y) referencia = p;
+  }
+  if (!referencia) return;
+
+  let filaRef = filasY.findIndex(fy => abs(referencia.y - fy) < 40);
+  if (filaRef === -1) return;
+
+  const filaSiguiente = filaRef - 1; 
+  if (filaSiguiente < 0) return;     
+
+  const nuevaY = filasY[filaSiguiente] + random(-15, 15);
+
+  const columnasOcupadas = plataformas
+    .filter(p => !p.principal && abs(p.y - nuevaY) < 60)
+    .map(p => columnasX.findIndex(cx => abs(p.x - cx) < 80));
+  const disponibles = [0, 1, 2, 3].filter(c => !columnasOcupadas.includes(c));
+  if (disponibles.length === 0) return;
+
+  const col = random(disponibles);
+  const nuevaX = columnasX[col] + random(-40, 40);
+
+  const ancho = random(120, 170);
+  if (haySolapamientoPlataformas(plataformas, nuevaX, nuevaY, ancho, 22)) return;
+
+  plataformas.push(new Plataforma({
+    x: nuevaX,
+    y: nuevaY,
+    w: ancho,
+    h: 22,
+    estilo: fondoActual === 0 ? "madera" : (fondoActual === 1 ? "roca" : "hielo"),
+    movil: false
+  }));
+}
+
 function verificarColision(bodyA, bodyB) {
   if (estado !== "jugando") return;
 
@@ -376,8 +517,18 @@ function verificarColision(bodyA, bodyB) {
     pelota.impactar(jugador);
   } else if (pelota && plataforma) {
     pelota.rebotarEnPlataforma(plataforma);
-  } else if (jugador && plataforma) {
+  } 
+  else if (jugador && plataforma) {
     crearParticulasPolvo(plataforma.x, plataforma.y - plataforma.h / 2);
+  
+    const pies = jugador.body.position.y + jugador.h / 2;
+    const tope = plataforma.y - plataforma.h / 2;
+    if (jugador.body.velocity.y < 0 || pies > tope + 8) {
+      Body.setPosition(jugador.body, {
+        x: jugador.body.position.x,
+        y: jugador.body.position.y + 2
+      });
+    }
   }
 }
 
@@ -979,8 +1130,8 @@ class Pelota {
   constructor(x, y, tipo, peligroEscenario = false) {
     this.tipo = tipo;
     this.peligroEscenario = peligroEscenario;
-    this.r = tipo === "piedra" || tipo === "rocaEscenario" ? 21 :
-      (tipo === "nieve" || tipo === "bolaNieve" ? 13 : 15);
+    this.r = tipo === "piedra" || tipo === "rocaEscenario" ? 14 :
+      (tipo === "nieve" || tipo === "bolaNieve" ? 10 : 11);
     this.portador = null;
     this.lanzada = peligroEscenario;
     this.atacante = null;
@@ -1050,8 +1201,20 @@ class Pelota {
       velY = -5.5;
     }
 
-    Body.setPosition(this.body, { x: jugador.body.position.x + dir * 34, y: jugador.body.position.y - 8 });
-    Body.setVelocity(this.body, { x: dir * velX, y: velY });
+    let id = jugador.datos.id;
+  let offsetX = 34, offsetY = -8;
+  if (id === "beisbol")      { offsetX = 38; offsetY = -6; }
+  else if (id === "americano"){ offsetX = 32; offsetY = -14; }
+  else if (id === "tenista") { offsetX = 40; offsetY = -8; }
+  else if (id === "soccer")  { offsetX = 26; offsetY = 16; }
+
+  Body.setPosition(this.body, {
+    x: jugador.body.position.x + dir * offsetX,
+    y: jugador.body.position.y + offsetY
+  });
+
+  if (id === "soccer") velY -= 1.5;
+  Body.setVelocity(this.body, { x: dir * velX, y: velY });
   }
 
   rebotarEnPlataforma(plataforma) {
@@ -1096,9 +1259,19 @@ class Pelota {
 
     if (this.portador) {
       let pos = this.portador.body.position;
-      Body.setPosition(this.body, { x: pos.x + this.portador.direccion * 22, y: pos.y - 5 });
+      let dir = this.portador.direccion;
+      let id = this.portador.datos.id;
+      let offsetX = 22, offsetY = -5;
+    
+      if (id === "beisbol")       { offsetX = 38; offsetY = -6; }
+      else if (id === "americano"){ offsetX = 32; offsetY = -14; }
+      else if (id === "tenista")  { offsetX = 40; offsetY = -8; }
+      else if (id === "soccer")   { offsetX = 26; offsetY = 16; }
+    
+      Body.setPosition(this.body, { x: pos.x + dir * offsetX, y: pos.y + offsetY });
       Body.setVelocity(this.body, { x: 0, y: 0 });
-    } else if (this.plataformaApoyada) {
+    }
+    else if (this.plataformaApoyada) {
       if (this.plataformaApoyada.desaparecida) {
         this.plataformaApoyada = null;
         this.body.isSensor = false;
@@ -1162,30 +1335,30 @@ class Pelota {
     let escala = 1 + jugador.dano / 70;
 
     if (this.tipo === "fuego") {
-      jugador.recibirDano(14);
+      jugador.recibirDano(10);
       jugador.tiempoQuemado = 210;
       jugador.mostrarEfectoTexto("🔥 ¡QUEMADURA! -14");
-      Body.setVelocity(jugador.body, { x: dir * 6, y: -4 });
+      Body.setVelocity(jugador.body, { x: dir * 3.5, y: -2.5 });
       this.usada = true;
     } else if (this.tipo === "piedra") {
-      jugador.recibirDano(28);
-      jugador.tiempoAturdido = 32;
+      jugador.recibirDano(20);
+      jugador.tiempoAturdido = 22;
       jugador.mostrarEfectoTexto("🪨 ¡SUPER KNOCKBACK! -28");
-      Body.setVelocity(jugador.body, { x: dir * 16 * escala, y: -10.5 });
+      Body.setVelocity(jugador.body, { x: dir * 6 * escala, y: -6 });
       this.usada = true;
     } else if (this.tipo === "nieve") {
       jugador.recibirDano(8);
       jugador.tiempoCongelado = 190;
       jugador.mostrarEfectoTexto("❄️ ¡CONGELADO! -8");
-      Body.setVelocity(jugador.body, { x: dir * 2.5, y: -2 });
+      Body.setVelocity(jugador.body, { x: dir * 1.5, y: -1.5 });
       this.usada = true;
     } else if (this.tipo === "agua") {
       jugador.recibirDano(10);
       jugador.tiempoResbaloso = 220;
       jugador.mostrarEfectoTexto("💧 ¡EMPUJÓN Y RESBALÓN! -10");
       charcos.push(new Charco(jugador.body.position.x, jugador.body.position.y + 30));
-      Body.setVelocity(jugador.body, { x: dir * 12.5 * escala, y: -5 });
-      Body.setVelocity(this.body, { x: -this.body.velocity.x * 0.85, y: -7 });
+      Body.setVelocity(jugador.body, { x: dir * 6 * escala, y: -3 });
+      Body.setVelocity(this.body, { x: -this.body.velocity.x * 0.65, y: -5 });
       this.rebotes++;
       if (this.rebotes >= 3) this.usada = true;
     }
