@@ -118,7 +118,7 @@ function preload() {
 function setup() {
   createCanvas(1200, 800);
   engine = Engine.create();
-  engine.gravity.y = 0.98d;
+  engine.gravity.y = 0.98;
   world = engine.world;
 
   Events.on(engine, "collisionStart", function(event) {
