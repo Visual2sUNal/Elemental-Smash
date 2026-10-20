@@ -22,6 +22,10 @@ let escudos = [];
 let particulasPolvo = [];
 let tiempoInicioPartida = 0;
 let ganador = null;
+let tiempoInicioVictoria = 0;
+let inicioPoseVictoria = 0;
+let faseVictoria = "";
+let tokenVozVictoria = 0;
 let maxPlataformas = 12;
 let tiempoUltimaPlataforma = 0;
 
@@ -134,6 +138,7 @@ function setup() {
 }
 
 function iniciarJuego() {
+  cancelarVozVictoria();
   World.clear(world, false);
   plataformas = [];
   pelotas = [];
@@ -310,6 +315,8 @@ function procesarMuertes() {
   for (let jugador of [jugador1, jugador2]) {
     if (!jugador.muertePendiente || jugador.vidas <= 0) continue;
 
+    detenerSonidoQuemadura(jugador);
+    reproducirSonido("muerte");
     jugador.muertePendiente = false;
     jugador.vidas--;
     if (jugador.vidas > 0) {
@@ -326,7 +333,75 @@ function procesarMuertes() {
     ganador = jugador1.vidas === 0 && jugador2.vidas === 0 ? null :
       (jugador1.vidas > 0 ? jugador1 : jugador2);
     estado = "fin";
+    iniciarPresentacionVictoria();
   }
+}
+
+const frasesVictoria = {
+  tenista: { frase: "¡Ace! La cancha es mía.", pose: "¡ACE!" },
+  americano: { frase: "¡Touchdown! Nadie puede detenerme.", pose: "¡TOUCHDOWN!" },
+  soccer: { frase: "¡Golazo! Soy el mejor.", pose: "¡GOLAZO!" },
+  beisbol: { frase: "¡Home run! Soy el mejor.", pose: "¡HOME RUN!" }
+};
+
+function cancelarVozVictoria() {
+  tokenVozVictoria++;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function elegirVozNatural(idioma) {
+  if (!window.speechSynthesis) return null;
+  const base = idioma.toLowerCase().split("-")[0];
+  const voces = window.speechSynthesis.getVoices()
+    .filter(v => v.lang && v.lang.toLowerCase().startsWith(base));
+  const puntaje = voz => {
+    const nombre = voz.name.toLowerCase();
+    let valor = voz.lang.toLowerCase() === idioma.toLowerCase() ? 40 : 0;
+    if (/natural|neural/.test(nombre)) valor += 100;
+    if (/online|google/.test(nombre)) valor += 30;
+    if (/microsoft/.test(nombre)) valor += 20;
+    if (!voz.localService) valor += 5;
+    return valor;
+  };
+  return voces.sort((a, b) => puntaje(b) - puntaje(a))[0] || null;
+}
+
+function prepararVoz(utterance, idioma) {
+  utterance.lang = idioma;
+  const voz = elegirVozNatural(idioma);
+  if (voz) {
+    utterance.voice = voz;
+    utterance.lang = voz.lang;
+  }
+}
+
+function iniciarPresentacionVictoria() {
+  tiempoInicioVictoria = millis();
+  inicioPoseVictoria = 0;
+  faseVictoria = ganador ? "winner" : "empate";
+  detenerSonidoQuemadura(jugador1);
+  detenerSonidoQuemadura(jugador2);
+  if (!ganador || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+
+  const token = ++tokenVozVictoria;
+  const voz = window.speechSynthesis;
+  const anuncio = new SpeechSynthesisUtterance("Winner");
+  prepararVoz(anuncio, "en-US");
+  anuncio.rate = 1;
+  anuncio.pitch = 1;
+  voz.speak(anuncio);
+
+  // El navegador conserva el orden de la cola: primero “Winner”, luego la frase del personaje.
+  setTimeout(() => {
+    if (token !== tokenVozVictoria || estado !== "fin" || !ganador) return;
+    faseVictoria = "pose";
+    inicioPoseVictoria = millis();
+    const frase = new SpeechSynthesisUtterance(frasesVictoria[ganador.datos.id].frase);
+    prepararVoz(frase, "es-CO");
+    frase.rate = 0.98;
+    frase.pitch = 1;
+    voz.speak(frase);
+  }, 950);
 }
 
 function dibujarBarraVida(jugador, x, y) {
@@ -358,6 +433,10 @@ function dibujarBarraVida(jugador, x, y) {
 }
 
 function dibujarPantallaGanador() {
+  if (ganador) {
+    dibujarPresentacionVictoria();
+    return;
+  }
   imageMode(CORNER);
   image(fondos[fondoActual], 0, 0, width, height);
   fill(0, 0, 0, 195);
@@ -392,6 +471,56 @@ function dibujarPantallaGanador() {
   fill(255);
   textSize(17);
   text("ESC: volver a selección", width / 2, 530);
+}
+
+function dibujarPresentacionVictoria() {
+  imageMode(CORNER);
+  image(fondos[fondoActual], 0, 0, width, height);
+  noStroke();
+  fill(7, 10, 22, 220);
+  rect(0, 0, width, height);
+
+  if (faseVictoria === "winner" && millis() - tiempoInicioVictoria >= 950) {
+    faseVictoria = "pose";
+    inicioPoseVictoria = millis();
+  }
+
+  fill(255, 195, 45, 32);
+  ellipse(width / 2, 410, 520, 520);
+  fill(255, 220, 110, 28);
+  ellipse(width / 2, 410, 390, 390);
+
+  textAlign(CENTER, CENTER);
+  fill(255, 215, 70);
+  textSize(58);
+  text("WINNER!", width / 2, 92);
+  fill(255);
+  textSize(25);
+  text(ganador.controles.nombre + " · " + ganador.datos.nombre, width / 2, 155);
+
+  const esPose = faseVictoria === "pose";
+  const lista = cuadrosSprites[ganador.datos.id][esPose ? "throw" : "idle"];
+  const indiceCuadro = esPose
+    ? min(lista.length - 1, floor((millis() - inicioPoseVictoria) / 140))
+    : floor((millis() - tiempoInicioVictoria) / 180) % lista.length;
+  const cuadro = lista[indiceCuadro];
+  imageMode(CENTER);
+  image(sprites[ganador.datos.id], width / 2, 425,
+    cuadro[2] * 3.4, cuadro[3] * 3.4,
+    cuadro[0], cuadro[1], cuadro[2], cuadro[3]);
+
+  if (esPose) {
+    fill(255, 230, 110);
+    textSize(30);
+    text(frasesVictoria[ganador.datos.id].pose, width / 2, 630);
+  }
+
+  fill(100, 255, 140);
+  textSize(19);
+  text("ENTER: revancha", width / 2, 730);
+  fill(255);
+  textSize(16);
+  text("ESC: volver a selección", width / 2, 765);
 }
 
 function generarPlataformas() {
@@ -527,10 +656,13 @@ function verificarColision(bodyA, bodyB) {
   if (estado !== "jugando") return;
 
   let pelota = bodyA.pelotaRef || bodyB.pelotaRef;
+  let pelotaB = bodyA.pelotaRef && bodyB.pelotaRef ? bodyB.pelotaRef : null;
   let jugador = bodyA.jugadorRef || bodyB.jugadorRef;
   let plataforma = bodyA.plataformaRef || bodyB.plataformaRef;
 
-  if (pelota && jugador) {
+  if (pelota && pelotaB) {
+    reproducirSonido(pelota.tipo);
+  } else if (pelota && jugador) {
     pelota.impactar(jugador);
   } else if (pelota && plataforma) {
     pelota.rebotarEnPlataforma(plataforma);
@@ -543,6 +675,7 @@ function verificarColision(bodyA, bodyB) {
     if (dentroHorizontal && jugador.body.velocity.y >= 0 && pies <= tope + 12) {
       jugador.enSuelo = true;
       crearParticulasPolvo(jugador.body.position.x, tope);
+      reproducirSonido("aterrizar");
     } else {
       Body.setPosition(jugador.body, {
         x: jugador.body.position.x,
@@ -564,27 +697,172 @@ function iniciarAudio() {
 function reproducirSonido(tipo) {
   iniciarAudio();
   if (!audioContexto) return;
-  const ahora = audioContexto.currentTime;
+  if (tipo === "fuego") {
+    reproducirSonido("fuegoGolpe");
+    return;
+  }
+  if (tipo === "nieve") {
+    reproducirSonido("hielo");
+    return;
+  }
   const presets = {
     salto: [440, 620, 0.11, "sine"],
-    quemadura: [180, 75, 0.24, "sawtooth"],
-    congelamiento: [900, 420, 0.28, "triangle"],
-    piedra: [120, 55, 0.2, "square"],
+    aterrizar: [260, 110, 0.14, "triangle"],
+    hielo: [1250, 520, 0.32, "triangle"],
+    frio: [480, 260, 0.38, "sine"],
     escudo: [520, 980, 0.2, "sine"]
   };
-  const [inicio, fin, duracion, forma] = presets[tipo];
+  if (tipo === "piedra") {
+    reproducirRuidoGolpe(115, 520, 0.24, 0.9);
+    reproducirTono(95, 48, 0.2, "sine", 0.34);
+    return;
+  }
+  if (tipo === "coco") {
+    reproducirRuidoGolpe(260, 900, 0.18, 0.52);
+    reproducirTono(190, 82, 0.16, "triangle", 0.2);
+    return;
+  }
+  if (tipo === "rocaEscenario") {
+    reproducirRuidoGolpe(150, 850, 0.28, 0.68);
+    reproducirTono(125, 58, 0.22, "sine", 0.28);
+    return;
+  }
+  if (tipo === "bolaNieve") {
+    reproducirRuidoGolpe(2100, 4200, 0.3, 0.34);
+    reproducirTono(1450, 700, 0.3, "triangle", 0.1);
+    return;
+  }
+  if (tipo === "recogerBola") {
+    reproducirTono(560, 820, 0.12, "sine", 0.11);
+    return;
+  }
+  if (tipo === "lanzarBola") {
+    reproducirRuidoGolpe(850, 300, 0.13, 0.18);
+    reproducirTono(280, 160, 0.12, "triangle", 0.1);
+    return;
+  }
+  if (tipo === "escudoGolpe") {
+    reproducirTono(1150, 260, 0.28, "sine", 0.22);
+    reproducirRuidoGolpe(1700, 700, 0.2, 0.16);
+    return;
+  }
+  if (tipo === "menu") {
+    reproducirTono(600, 760, 0.07, "sine", 0.07);
+    return;
+  }
+  if (tipo === "plataforma") {
+    reproducirRuidoGolpe(220, 760, 0.2, 0.22);
+    reproducirTono(180, 90, 0.16, "triangle", 0.12);
+    return;
+  }
+  if (tipo === "inicio") {
+    reproducirTono(360, 900, 0.35, "triangle", 0.14);
+    return;
+  }
+  if (tipo === "paso") {
+    reproducirRuidoGolpe(300, 650, 0.07, 0.09);
+    return;
+  }
+  if (tipo === "muerte") {
+    reproducirRuidoGolpe(180, 55, 0.42, 0.35);
+    reproducirTono(190, 70, 0.4, "sine", 0.16);
+    return;
+  }
+  if (tipo === "reaparecer") {
+    reproducirTono(300, 1000, 0.32, "sine", 0.12);
+    return;
+  }
+  if (tipo === "escudoFin") {
+    reproducirTono(720, 320, 0.16, "sine", 0.08);
+    return;
+  }
+  if (tipo === "agua") {
+    reproducirRuidoGolpe(680, 1800, 0.42, 0.7);
+    reproducirTono(330, 95, 0.22, "sine", 0.13);
+    return;
+  }
+  if (tipo === "fuegoGolpe") {
+    reproducirRuidoGolpe(520, 2500, 0.28, 0.32);
+    reproducirTono(210, 85, 0.18, "sawtooth", 0.1);
+    return;
+  }
+  if (tipo === "hielo") reproducirRuidoGolpe(1800, 3800, 0.34, 0.38);
+  if (tipo === "frio") reproducirRuidoGolpe(900, 2400, 0.22, 0.14);
+  if (!presets[tipo]) return;
+  reproducirTono(...presets[tipo], 0.12);
+}
+
+function reproducirTono(inicio, fin, duracion, forma, volumenMax = 0.12) {
+  const ahora = audioContexto.currentTime;
   const osc = audioContexto.createOscillator();
   const volumen = audioContexto.createGain();
   osc.type = forma;
-  osc.frequency.setValueAtTime(inicio, ahora);
-  osc.frequency.exponentialRampToValueAtTime(fin, ahora + duracion);
+  osc.frequency.setValueAtTime(Math.max(1, inicio), ahora);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(1, fin), ahora + duracion);
   volumen.gain.setValueAtTime(0.0001, ahora);
-  volumen.gain.exponentialRampToValueAtTime(0.12, ahora + 0.015);
+  volumen.gain.exponentialRampToValueAtTime(volumenMax, ahora + 0.015);
   volumen.gain.exponentialRampToValueAtTime(0.0001, ahora + duracion);
   osc.connect(volumen);
   volumen.connect(audioContexto.destination);
   osc.start(ahora);
   osc.stop(ahora + duracion);
+}
+
+function reproducirRuidoGolpe(frecuenciaFiltro, frecuenciaFinal, duracion, volumenMax) {
+  const largo = Math.ceil(audioContexto.sampleRate * duracion);
+  const buffer = audioContexto.createBuffer(1, largo, audioContexto.sampleRate);
+  const datos = buffer.getChannelData(0);
+  for (let i = 0; i < largo; i++) {
+    const envolvente = 1 - i / largo;
+    datos[i] = (Math.random() * 2 - 1) * envolvente * (Math.random() < 0.12 ? 1 : 0.45);
+  }
+  const fuente = audioContexto.createBufferSource();
+  const filtro = audioContexto.createBiquadFilter();
+  const volumen = audioContexto.createGain();
+  fuente.buffer = buffer;
+  filtro.type = "bandpass";
+  filtro.frequency.setValueAtTime(frecuenciaFiltro, audioContexto.currentTime);
+  filtro.frequency.exponentialRampToValueAtTime(frecuenciaFinal, audioContexto.currentTime + duracion);
+  filtro.Q.value = 0.8;
+  volumen.gain.setValueAtTime(volumenMax, audioContexto.currentTime);
+  volumen.gain.exponentialRampToValueAtTime(0.0001, audioContexto.currentTime + duracion);
+  fuente.connect(filtro);
+  filtro.connect(volumen);
+  volumen.connect(audioContexto.destination);
+  fuente.start();
+  fuente.stop(audioContexto.currentTime + duracion);
+}
+
+function iniciarSonidoQuemadura(jugador) {
+  iniciarAudio();
+  if (!audioContexto || jugador.sonidoQuemadura) return;
+  const buffer = audioContexto.createBuffer(1, audioContexto.sampleRate, audioContexto.sampleRate);
+  const datos = buffer.getChannelData(0);
+  for (let i = 0; i < datos.length; i++) {
+    datos[i] = (Math.random() * 2 - 1) * (Math.random() < 0.18 ? 0.9 : 0.18);
+  }
+  const fuente = audioContexto.createBufferSource();
+  const filtro = audioContexto.createBiquadFilter();
+  const volumen = audioContexto.createGain();
+  fuente.buffer = buffer;
+  fuente.loop = true;
+  filtro.type = "bandpass";
+  filtro.frequency.value = 1250;
+  filtro.Q.value = 0.7;
+  volumen.gain.value = 0.045;
+  fuente.connect(filtro);
+  filtro.connect(volumen);
+  volumen.connect(audioContexto.destination);
+  fuente.start();
+  jugador.sonidoQuemadura = { fuente, volumen };
+}
+
+function detenerSonidoQuemadura(jugador) {
+  if (!jugador.sonidoQuemadura) return;
+  const sonido = jugador.sonidoQuemadura;
+  sonido.volumen.gain.setTargetAtTime(0.0001, audioContexto.currentTime, 0.04);
+  sonido.fuente.stop(audioContexto.currentTime + 0.15);
+  jugador.sonidoQuemadura = null;
 }
 
 function crearParticulasPolvo(x, y) {
@@ -639,18 +917,30 @@ function keyPressed() {
     if (keyCode === LEFT_ARROW) seleccionJ2 = (seleccionJ2 + 3) % 4;
     if (keyCode === RIGHT_ARROW) seleccionJ2 = (seleccionJ2 + 1) % 4;
     if (key === "e" || key === "E") fondoActual = (fondoActual + 1) % 3;
-    if (keyCode === ENTER) iniciarJuego();
+    if (keyCode === ENTER) {
+      reproducirSonido("inicio");
+      iniciarJuego();
+    } else if ([65, 68, LEFT_ARROW, RIGHT_ARROW, 69].includes(keyCode)) {
+      reproducirSonido("menu");
+    }
     return;
   }
 
   if (estado === "fin") {
-    if (keyCode === ENTER) iniciarJuego();
-    else if (keyCode === ESCAPE) estado = "seleccion";
+    if (keyCode === ENTER) {
+      reproducirSonido("inicio");
+      iniciarJuego();
+    } else if (keyCode === ESCAPE) {
+      cancelarVozVictoria();
+      reproducirSonido("menu");
+      estado = "seleccion";
+    }
     return;
   }
 
   if (estado === "jugando") {
     if (keyCode === ESCAPE) {
+      reproducirSonido("menu");
       estado = "seleccion";
       return;
     }
@@ -813,12 +1103,14 @@ class Plataforma {
 
   desaparecer() {
     this.desaparecida = true;
+    reproducirSonido("plataforma");
     this.tiempoDesaparecida = this.estilo === "hielo" ? 180 : 120;
     this.jugadoresSobre = { J1: false, J2: false };
     this.body.collisionFilter.mask = 0;
   }
 
   reaparecer() {
+    reproducirSonido("plataforma");
     this.desaparecida = false;
     this.pisadas = 0;
     this.resistencia = this.resistenciaMaxima;
@@ -945,6 +1237,7 @@ class Jugador {
     this.tiempoInvulnerable = 0;
     this.tiempoEscudo = 0;
     this.enSuelo = false;
+    this.saltosAereosRestantes = 1;
 
     this.animacion = "idle";
     this.tiempoLanzar = 0;
@@ -954,18 +1247,23 @@ class Jugador {
     this.tiempoAturdido = 0;
     this.mensajeEfecto = "";
     this.tiempoMensaje = 0;
+    this.ultimoPasoSonido = 0;
   }
 
   actualizar() {
     if (this.muertePendiente || this.vidas <= 0) return;
 
     if (this.tiempoInvulnerable > 0) this.tiempoInvulnerable--;
-    if (this.tiempoEscudo > 0) this.tiempoEscudo--;
+    if (this.tiempoEscudo > 0) {
+      this.tiempoEscudo--;
+      if (this.tiempoEscudo === 0) reproducirSonido("escudoFin");
+    }
     const piesActuales = this.body.position.y + this.h / 2;
     this.enSuelo = this.body.velocity.y >= -0.1 && plataformas.some(p =>
       !p.desaparecida && abs(this.body.position.x - p.x) < (this.w + p.w) / 2 - 2 &&
       abs(piesActuales - (p.y - p.h / 2)) < 7
     );
+    if (this.enSuelo) this.saltosAereosRestantes = 1;
     this.verificarCharco();
     this.verificarPlataformaMojada();
     this.actualizarEfectos();
@@ -974,6 +1272,11 @@ class Jugador {
 
     if (this.tiempoAturdido <= 0) {
       this.mover();
+    }
+
+    if (this.enSuelo && abs(this.body.velocity.x) > 1 && frameCount - this.ultimoPasoSonido > 24) {
+      reproducirSonido("paso");
+      this.ultimoPasoSonido = frameCount;
     }
 
     this.actualizarEstadoAnimacion();
@@ -993,6 +1296,7 @@ class Jugador {
     if (estado === "jugando" && this.tiempoEscudo > 0 && this.vidas > 0 && !this.muertePendiente) {
       this.tiempoEscudo = 0;
       this.mostrarEfectoTexto("¡ESCUDO BLOQUEÓ EL GOLPE!");
+      reproducirSonido("escudoGolpe");
       return false;
     }
     if (!this.puedeRecibirDano()) return false;
@@ -1069,7 +1373,12 @@ class Jugador {
 
   saltar() {
     if (this.muertePendiente || this.vidas <= 0 ||
-        this.tiempoAturdido > 0 || this.tiempoCongelado > 100 || !this.enSuelo) return;
+        this.tiempoAturdido > 0 || this.tiempoCongelado > 100) return;
+
+    if (!this.enSuelo) {
+      if (this.saltosAereosRestantes <= 0) return;
+      this.saltosAereosRestantes--;
+    }
 
     let fuerzaSalto = this.tiempoCongelado > 0 ? this.datos.salto * 0.55 : this.datos.salto;
     this.enSuelo = false;
@@ -1083,6 +1392,7 @@ class Jugador {
 
     if (this.pelotaTomada) {
       this.pelotaTomada.lanzar(this, this.direccion);
+      reproducirSonido("lanzarBola");
       this.pelotaTomada = null;
       this.tiempoLanzar = 18;
       return;
@@ -1095,6 +1405,7 @@ class Jugador {
         if (d < 60) {
           this.pelotaTomada = p;
           p.recoger(this);
+          reproducirSonido("recogerBola");
           break;
         }
       }
@@ -1108,6 +1419,7 @@ class Jugador {
         this.recibirDano(3, 4);
       }
     }
+    if (this.tiempoQuemado <= 0) detenerSonidoQuemadura(this);
     if (this.tiempoCongelado > 0) this.tiempoCongelado--;
     if (this.tiempoResbaloso > 0) this.tiempoResbaloso--;
     if (this.tiempoAturdido > 0) this.tiempoAturdido--;
@@ -1150,12 +1462,15 @@ class Jugador {
   }
 
   reaparecer() {
+    detenerSonidoQuemadura(this);
+    reproducirSonido("reaparecer");
     this.liberarPelota();
     this.vida = this.vidaMaxima;
     this.dano = 0;
     this.tiempoInvulnerable = duracionInvulnerabilidad;
     this.tiempoEscudo = 0;
     this.enSuelo = false;
+    this.saltosAereosRestantes = 1;
     this.tiempoLanzar = 0;
     this.tiempoQuemado = 0;
     this.tiempoCongelado = 0;
@@ -1334,6 +1649,9 @@ class Pelota {
   rebotarEnPlataforma(plataforma) {
     if (this.portador) return;
 
+    // Cada tipo de bola tiene un sonido al tocar una plataforma.
+    if (abs(this.body.velocity.y) > 2) reproducirSonido(this.tipo);
+
     if (this.peligroEscenario && this.tiempoRestante < 0) {
       this.lanzada = false;
       this.tiempoRestante = 300;
@@ -1448,6 +1766,7 @@ class Pelota {
       jugador.recibirDano(10);
       jugador.mostrarEfectoTexto("¡OBJETO DEL ESCENARIO! -10");
       Body.setVelocity(jugador.body, { x: this.body.velocity.x >= 0 ? 7 : -7, y: -5 });
+      reproducirSonido(this.tipo);
       this.usada = true;
       return;
     }
@@ -1460,7 +1779,8 @@ class Pelota {
       jugador.tiempoQuemado = 210;
       jugador.mostrarEfectoTexto("🔥 ¡QUEMADURA! -14");
       Body.setVelocity(jugador.body, { x: dir * 3.5, y: -2.5 });
-      reproducirSonido("quemadura");
+      reproducirSonido("fuegoGolpe");
+      iniciarSonidoQuemadura(jugador);
       this.usada = true;
     } else if (this.tipo === "piedra") {
       jugador.recibirDano(20);
@@ -1474,7 +1794,8 @@ class Pelota {
       jugador.tiempoCongelado = 190;
       jugador.mostrarEfectoTexto("❄️ ¡CONGELADO! -8");
       Body.setVelocity(jugador.body, { x: dir * 1.5, y: -1.5 });
-      reproducirSonido("congelamiento");
+      reproducirSonido("hielo");
+      reproducirSonido("frio");
       this.usada = true;
     } else if (this.tipo === "agua") {
       jugador.recibirDano(10);
@@ -1483,6 +1804,7 @@ class Pelota {
       charcos.push(new Charco(jugador.body.position.x, jugador.body.position.y + 30));
       Body.setVelocity(jugador.body, { x: dir * 6 * escala, y: -3 });
       Body.setVelocity(this.body, { x: -this.body.velocity.x * 0.65, y: -5 });
+      reproducirSonido("agua");
       this.rebotes++;
       if (this.rebotes >= 3) this.usada = true;
     }
