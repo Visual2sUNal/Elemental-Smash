@@ -26,6 +26,8 @@ let tiempoInicioVictoria = 0;
 let inicioPoseVictoria = 0;
 let faseVictoria = "";
 let tokenVozVictoria = 0;
+let audiosVictoria = {};
+let audioVictoriaActual = null;
 let maxPlataformas = 12;
 let tiempoUltimaPlataforma = 0;
 
@@ -126,6 +128,13 @@ function preload() {
 
 function setup() {
   createCanvas(1200, 800);
+  audiosVictoria = {
+    victory: crearAudioVictoria("victory.mp3"),
+    tenista: crearAudioVictoria("tenista.mp3"),
+    americano: crearAudioVictoria("americano.mp3"),
+    soccer: crearAudioVictoria("futbol.mp3"),
+    beisbol: crearAudioVictoria("besiboll.mp3")
+  };
   engine = Engine.create();
   engine.gravity.y = 0.98;
   world = engine.world;
@@ -344,9 +353,20 @@ const frasesVictoria = {
   beisbol: { frase: "¡Home run! Soy el mejor.", pose: "¡HOME RUN!" }
 };
 
+function crearAudioVictoria(archivo) {
+  const audio = new Audio("sprites y fondo/sonido/" + archivo);
+  audio.preload = "auto";
+  return audio;
+}
+
 function cancelarVozVictoria() {
   tokenVozVictoria++;
   if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (audioVictoriaActual) {
+    audioVictoriaActual.pause();
+    audioVictoriaActual.currentTime = 0;
+    audioVictoriaActual = null;
+  }
 }
 
 function elegirVozNatural(idioma) {
@@ -375,7 +395,7 @@ function prepararVoz(utterance, idioma) {
   }
 }
 
-function iniciarPresentacionVictoria() {
+function iniciarPresentacionVictoriaSintetizada() {
   tiempoInicioVictoria = millis();
   inicioPoseVictoria = 0;
   faseVictoria = ganador ? "winner" : "empate";
@@ -402,6 +422,48 @@ function iniciarPresentacionVictoria() {
     frase.pitch = 1;
     voz.speak(frase);
   }, 950);
+}
+
+function reproducirAudioVictoria(nombre, token, alTerminar) {
+  const audio = audiosVictoria[nombre];
+  if (!audio) {
+    alTerminar();
+    return;
+  }
+
+  let terminado = false;
+  const continuar = () => {
+    if (terminado || token !== tokenVozVictoria || estado !== "fin") return;
+    terminado = true;
+    if (audioVictoriaActual === audio) audioVictoriaActual = null;
+    alTerminar();
+  };
+
+  if (audioVictoriaActual && audioVictoriaActual !== audio) audioVictoriaActual.pause();
+  audioVictoriaActual = audio;
+  audio.pause();
+  audio.currentTime = 0;
+  audio.onended = continuar;
+  audio.onerror = continuar;
+  const reproduccion = audio.play();
+  if (reproduccion && reproduccion.catch) reproduccion.catch(continuar);
+}
+
+function iniciarPresentacionVictoria() {
+  tiempoInicioVictoria = millis();
+  inicioPoseVictoria = 0;
+  faseVictoria = ganador ? "winner" : "empate";
+  detenerSonidoQuemadura(jugador1);
+  detenerSonidoQuemadura(jugador2);
+  if (!ganador) return;
+
+  const token = ++tokenVozVictoria;
+  reproducirAudioVictoria("victory", token, () => {
+    if (token !== tokenVozVictoria || !ganador) return;
+    faseVictoria = "pose";
+    inicioPoseVictoria = millis();
+    reproducirAudioVictoria(ganador.datos.id, token, () => {});
+  });
 }
 
 function dibujarBarraVida(jugador, x, y) {
@@ -479,11 +541,6 @@ function dibujarPresentacionVictoria() {
   noStroke();
   fill(7, 10, 22, 220);
   rect(0, 0, width, height);
-
-  if (faseVictoria === "winner" && millis() - tiempoInicioVictoria >= 950) {
-    faseVictoria = "pose";
-    inicioPoseVictoria = millis();
-  }
 
   fill(255, 195, 45, 32);
   ellipse(width / 2, 410, 520, 520);
