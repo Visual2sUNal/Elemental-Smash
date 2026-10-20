@@ -188,8 +188,8 @@ function dibujarMenuSeleccion() {
 
   for (let i = 0; i < personajes.length; i++) {
     let p = personajes[i];
-    let x = 135 + i * 210;
-    let y = 260;
+    let x = width / 2 - 345 + i * 230;
+    let y = 340;
 
     strokeWeight(3);
     if (seleccionJ1 === i && seleccionJ2 === i) {
@@ -228,12 +228,12 @@ function dibujarMenuSeleccion() {
   rectMode(CORNER);
   fill(255);
   textSize(15);
-  text("J1 elige con A / D  |  Mover: A, D, W  |  Recoger / Lanzar: F", width / 2, 430);
-  text("J2 elige con ← / →  |  Mover: ←, →, ↑  |  Recoger / Lanzar: K", width / 2, 460);
+  text("J1 elige con A / D  |  Mover: A, D, W  |  Recoger / Lanzar: F", width / 2, 540);
+  text("J2 elige con ← / →  |  Mover: ←, →, ↑  |  Recoger / Lanzar: K", width / 2, 575);
 
   fill(100, 255, 140);
   textSize(22);
-  text("Presiona ENTER para pelear (1 vs 1)", width / 2, 530);
+  text("Presiona ENTER para pelear (1 vs 1)", width / 2, 660);
 }
 
 function dibujarJuego() {
